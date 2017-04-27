@@ -67,12 +67,14 @@ bool have_manifest_diskspace = false; /* assume no until checked */
 bool have_network = false;	    /* assume no access until proved */
 char *version_url = NULL;
 char *content_url = NULL;
+char *mix_url = NULL;
 char *cert_path = NULL;
 long update_server_port = -1;
 
 static const char *default_version_url_path = "/usr/share/defaults/swupd/versionurl";
 static const char *default_content_url_path = "/usr/share/defaults/swupd/contenturl";
 static const char *default_format_path = "/usr/share/defaults/swupd/format";
+static const char *default_mix_url_path = "/usr/share/defaults/swupd/mixurl";
 
 timelist init_timelist(void)
 {
@@ -232,6 +234,19 @@ static int set_url(char **global, char *url, const char *path)
 	}
 
 	return ret;
+}
+
+int set_mix_url(void)
+{
+	char *fullpath;
+	/* If it doesn't exist do not set anything */
+	string_or_die(&fullpath, "%s%s", path_prefix, default_mix_url_path);
+	int err = access(fullpath, R_OK);
+	if (err) {
+		free(fullpath);
+		return 0;
+	}
+	return set_url(&mix_url, NULL, default_mix_url_path);
 }
 
 /* Initializes the content_url global variable. If the url parameter is not
@@ -502,6 +517,12 @@ bool init_globals(void)
 			printf("\nDefault content URL not found. Use the -c option instead.\n");
 			exit(EXIT_FAILURE);
 		}
+	}
+
+	/* The mix url should  not be user edited or supplied */
+	if (set_mix_url()) {
+		printf("\nDefault mix URL not found. Please make sure the file is not corrupt.\n");
+		exit(EXIT_FAILURE);
 	}
 
 	/* must set this global after version_url and content_url */
