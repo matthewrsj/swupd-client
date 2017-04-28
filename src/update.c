@@ -132,6 +132,22 @@ TRY_DOWNLOAD:
 		return -1;
 	}
 
+	/* If mix content exists, download it now only after all the upstream content
+	 * was successfully downloaded. Both content will then be staged together. */
+	set_mix_globals(); /* We must reset the URL to local and local_download = true */
+	err = start_full_download(true);
+	if (err != 0) {
+		return err;
+	}
+
+	try_delta_loop(mix_content, 0);
+	failed = full_download_loop(updates, 0);
+	/* There is nothing to retry from with local download */
+	if (list_head(failed)) {
+		list_free_list(failed);
+		return -1;
+	}
+
 	if (download_only) {
 		return -1;
 	}
