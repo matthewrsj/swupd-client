@@ -256,6 +256,7 @@ AH_TEMPLATE([STATE_DIR], [The state directory for swupd content])
 AH_TEMPLATE([LOG_DIR], [Directory for swupd log files])
 AH_TEMPLATE([LOCK_DIR], [Directory for lock file])
 AH_TEMPLATE([BUNDLES_DIR], [Directory to use for bundles])
+AH_TEMPLATE([MIX_BUNDLES_DIR], [Directory to use for custom bundles])
 AH_TEMPLATE([CERT_PATH], [Location of update certificate])
 AH_TEMPLATE([MOTD_FILE], [motd file path])
 
@@ -267,6 +268,7 @@ AS_IF(
      AC_DEFINE([LOG_DIR], ["/var/log/swupd"])
      AC_DEFINE([LOCK_DIR], ["/run/lock"])
      AC_DEFINE([BUNDLES_DIR], ["/usr/share/clear/bundles"])
+     AC_DEFINE([MIX_BUNDLES_DIR], ["/usr/share/mix/bundles"])
      AC_DEFINE_UNQUOTED([CERT_PATH], ["$cert_path"])
      AC_DEFINE([MOTD_FILE], ["/usr/lib/motd.d/001-new-release"])],
   [AC_MSG_ERROR([Unknown build variant])]
