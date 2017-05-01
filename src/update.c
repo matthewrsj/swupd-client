@@ -87,12 +87,43 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 	return end_full_download();
 }
 
-static int update_loop(struct list *updates, struct manifest *server_manifest)
+static int stage_content(struct list *updates, struct manifest *manifest)
+{
+	/* starting at list_head in the filename alpha-sorted updates list
+	 * means node directories are added before leaf files */
+	printf("Staging file content\n");
+	iter = list_head(updates);
+	while (iter) {
+		file = iter->data;
+		iter = iter->next;
+
+		if (file->do_not_update || file->is_deleted) {
+			continue;
+		}
+
+		/* for each file: fdatasync to persist changed content over reboot, or maybe a global sync */
+		/* for each file: check hash value; on mismatch delete and queue full download */
+		/* todo: hash check */
+
+		ret = do_staging(file, manifest);
+		if (ret < 0) {
+			printf("File staging failed: %s\n", file->filename);
+			return ret;
+		}
+	}
+	return 0;
+}
+
+static int update_loop(struct list **updates_list, struct manifest **manifests)
 {
 	int ret;
 	struct file *file;
 	struct list *iter;
 	struct list *failed = NULL;
+	struct list *updates = updates_list[0];
+	struct list *mix_content = updates_list[0];
+	struct manifest *server_manifest = manifests[0];
+	struct manifest *mix_manifest = manifests[1];
 	int err;
 	int retries = 0;  /* We only want to go through the download loop once */
 	int timeout = 10; /* Amount of seconds for first download retry */
@@ -134,18 +165,20 @@ TRY_DOWNLOAD:
 
 	/* If mix content exists, download it now only after all the upstream content
 	 * was successfully downloaded. Both content will then be staged together. */
-	set_mix_globals(); /* We must reset the URL to local and local_download = true */
-	err = start_full_download(true);
-	if (err != 0) {
-		return err;
-	}
+	if (mix_content != NULL) {
+		set_mix_globals(); /* We must reset the URL to local and local_download = true */
+		err = start_full_download(true);
+		if (err != 0) {
+			return err;
+		}
 
-	try_delta_loop(mix_content, 0);
-	failed = full_download_loop(updates, 0);
-	/* There is nothing to retry from with local download */
-	if (list_head(failed)) {
-		list_free_list(failed);
-		return -1;
+		try_delta_loop(mix_content, 0);
+		failed = full_download_loop(mix_content, 0);
+		/* There is nothing to retry from with local download */
+		if (list_head(failed)) {
+			list_free_list(failed);
+			return -1;
+		}
 	}
 
 	if (download_only) {
@@ -159,31 +192,20 @@ TRY_DOWNLOAD:
 
 	/* from here onward we're doing real update work modifying "the disk" */
 
-	/* starting at list_head in the filename alpha-sorted updates list
-	 * means node directories are added before leaf files */
-	printf("Staging file content\n");
-	iter = list_head(updates);
-	while (iter) {
-		file = iter->data;
-		iter = iter->next;
 
-		if (file->do_not_update || file->is_deleted) {
-			continue;
-		}
-
-		/* for each file: fdatasync to persist changed content over reboot, or maybe a global sync */
-		/* for each file: check hash value; on mismatch delete and queue full download */
-		/* todo: hash check */
-
-		ret = do_staging(file, server_manifest);
-		if (ret < 0) {
-			printf("File staging failed: %s\n", file->filename);
-			return ret;
-		}
-	}
 
 	/* check policy, and if policy says, "ask", ask the user at this point */
 	/* check for reboot need - if needed, wait for reboot */
+	ret = stage_content(updates, server_manifest);
+	if (ret < 0) {
+		return ret;
+	}
+	if (mix_content != NULL) {
+		stage_content(mix_content, mix_manifest);
+		if (ret < 0) {
+			return ret;
+		}
+	}
 
 	/* sync */
 	sync();
@@ -234,9 +256,11 @@ int main_update()
 {
 	int current_version = -1, server_version = -1;
 	struct manifest *current_manifest = NULL, *server_manifest = NULL;
-	struct list *updates = NULL;
+	struct list **updates = {0, 0};
+	strict manifest **manifests = {0, 0};
 	struct list *current_subs = NULL;
 	struct list *latest_subs = NULL;
+	struct list *mix_bundles = NULL;
 	int ret;
 	int lock_fd;
 	int retries = 0;
@@ -431,7 +455,7 @@ download_packs:
 	/* Step 6: some more housekeeping */
 	/* TODO: consider trying to do less sorting of manifests */
 
-	updates = create_update_list(current_manifest, server_manifest);
+	updates = create_update_list (current_manifest, server_manifest);
 
 	link_renames(updates, current_manifest); /* TODO: Have special lists for candidate and renames */
 
@@ -446,7 +470,12 @@ download_packs:
 	grabtime_start(&times, "Update Loop");
 	updates = list_sort(updates, file_sort_filename);
 
-	ret = update_loop(updates, server_manifest);
+	/* Yell loudly if things fail here...but don't kill the regular update if local content fails to add */
+	if (mix_exists()) {
+		read_subscriptions_alt(&mix_bundles);
+	}
+
+	ret = update_loop(updates, server_manifests);
 	if (ret == 0) {
 		/* Failure to write the version file in the state directory
 		 * should not affect exit status. */
