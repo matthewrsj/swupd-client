@@ -48,6 +48,40 @@ void check_root(void)
 	}
 }
 
+/* If the MIX_BUNDLES_DIR has any content then we can run through
+ * adding the mix data to the OS */
+bool check_mix_exists(void)
+{
+	DIR *dir;
+	struct dirent *entry;
+	char *fullpath;
+	int i;
+
+	string_or_die(&fullpath, "%s%s", path_prefix, MIX_BUNDLES_DIR);
+
+	dir = opendir(fullpath);
+	if (dir == NULL) {
+		free(fullpath);
+		return false;
+	}
+	for(i = 0; i < 3; i++) {
+		entry = readdir(dir);
+		if (!entry) {
+			break;
+		}
+		if (!strcmp(entry->d_name, ".") ||
+			!strcmp(entry->d_name, "..")) {
+			continue;
+		}
+	}
+	/* If more than /. /.. exists, then at least one bundle exists */
+	if (i > 2) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
 /* Remove the contents of a staging directory (eg: /mnt/swupd/update/780 or
  * /mnt/swupd/update/delta) which are not supposed to contain
  * subdirectories containing files, ie: no need for true recursive removal.

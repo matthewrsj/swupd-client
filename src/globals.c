@@ -238,7 +238,9 @@ static int set_url(char **global, char *url, const char *path)
 
 int set_mix_url(void)
 {
+	int ret;
 	char *fullpath;
+
 	/* If it doesn't exist do not set anything */
 	string_or_die(&fullpath, "%s%s", path_prefix, default_mix_url_path);
 	int err = access(fullpath, R_OK);
@@ -246,7 +248,19 @@ int set_mix_url(void)
 		free(fullpath);
 		return 0;
 	}
-	return set_url(&mix_url, NULL, default_mix_url_path);
+	free(fullpath);
+	ret = set_url(&mix_url, NULL, default_mix_url_path);
+	if (ret) {
+		return ret;
+	}
+	ret = set_url(&content_url, NULL, default_mix_url_path);
+	if (ret) {
+		return ret;
+	}
+	ret = set_url(&version_url, NULL, default_mix_url_path);
+	if (ret) {
+		return ret;
+	}
 }
 
 /* Initializes the content_url global variable. If the url parameter is not
@@ -455,6 +469,16 @@ void set_cert_path(char UNUSED_PARAM *path)
 }
 #endif
 
+bool set_mix_globals(void)
+{
+	/* The mix url should  not be user edited or supplied */
+	if (set_mix_url()) {
+		printf("\nDefault mix URL not found. Please make sure the file is not corrupt.\n");
+		return false;
+	}
+	local_download = true;
+}
+
 bool init_globals(void)
 {
 	int ret;
@@ -517,12 +541,6 @@ bool init_globals(void)
 			printf("\nDefault content URL not found. Use the -c option instead.\n");
 			exit(EXIT_FAILURE);
 		}
-	}
-
-	/* The mix url should  not be user edited or supplied */
-	if (set_mix_url()) {
-		printf("\nDefault mix URL not found. Please make sure the file is not corrupt.\n");
-		exit(EXIT_FAILURE);
 	}
 
 	/* must set this global after version_url and content_url */
