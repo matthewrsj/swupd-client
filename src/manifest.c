@@ -595,6 +595,41 @@ void remove_manifest_files(char *filename, int version, char *hash)
 	}
 }
 
+struct manifest *load_mix_mom(int version)
+{
+	struct manifest *manifest = NULL;
+	int ret = 0;
+	char *filename;
+	char *url;
+	char *log_cmd = NULL;
+	bool retried = false;
+
+verify_mom:
+	ret = retrieve_manifests(version, version, "MoM", NULL);
+	if (ret != 0) {
+		printf("Failed to retrieve mix MoM manifest\n", version);
+		return NULL;
+	}
+
+	manifest = manifest_from_file(version, "MoM", false);
+
+	if (manifest == NULL) {
+		if (retried == false) {
+			remove_manifest_files("MoM", version, NULL);
+			retried = true;
+			goto verify_mom;
+		}
+		printf("Failed to load mix MoM manifest\n", version);
+		goto out;
+	}
+
+	free(filename);
+	free(url);
+	return manifest;
+out:
+	return NULL;
+}
+
 /* Loads the MoM (Manifest of Manifests) for VERSION.
  *
  * Implementation note: MoMs are not huge so deltas do not give much benefit,
