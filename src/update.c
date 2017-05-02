@@ -254,15 +254,91 @@ int add_included_manifests(struct manifest *mom, int current, struct list **subs
 	return ret;
 }
 
+int setup_mix_update(struct manifest *curr_mix_mom, struct manifest *latest_mix_mom, int *curr_mix_version, int *latest_mix_version, struct list *mix_bundles, struct list *latest_bundles)
+{
+	int ret;
+
+	read_mix_subscriptions(&mix_bundles);
+
+	ret = check_versions(curr_mix_version, latest_mix_version, path_prefix);
+	if (ret < 0) {
+		return ret;
+	}
+	if (*latest_mix_version <= *curr_mix_version) {
+		printf("Version on server (%i) is not newer than system version (%i)\n", *latest_mix_version, *curr_mix_version);
+		return *curr_mix_version;
+	}
+
+	/* No retries here, if it's not on the filesystem, it's not reachable */
+	curr_mix_mom = load_mix_mom(*curr_mix_version);
+	if (!curr_mix_mom) {
+		return EMOM_NOTFOUND;
+	}
+
+	latest_mix_mom = load_mix_mom(*latest_mix_version);
+	if (!latest_mix_mom) {
+		return EMOM_NOTFOUND;
+	}
+
+	/* Load current submanifests */
+	curr_mix_mom->submanifests = recurse_manifest(curr_mix_mom, mix_bundles, NULL);
+	if (!curr_mix_mom->submanifests) {
+		fprintf(stderr, "Error: Cannot load mix MoM sub-manifests...continuing without adding mix content\n");
+		free_manifest(curr_mix_mom);
+		free_manifest(latest_mix_mom);
+		return ERECURSE_MANIFEST;
+	}
+	curr_mix_mom->files = files_from_bundles(curr_mix_mom->submanifests);
+	curr_mix_mom->files = consolidate_files(curr_mix_mom->files);
+
+	/* Set subscription versions and link the peers together */
+	latest_bundles = list_clone(mix_bundles);
+	set_subscription_versions(latest_mix_mom, curr_mix_mom, &latest_bundles);
+	link_submanifests(curr_mix_mom, latest_mix_mom, mix_bundles, latest_bundles, false);
+	ret = add_included_manifests(latest_mix_mom, *curr_mix_version, &latest_bundles);
+	if (ret) {
+		free_manifest(curr_mix_mom);
+		free_manifest(latest_mix_mom);
+		return EMANIFEST_LOAD;
+	}
+
+	/* load server submanifests */
+	latest_mix_mom->submanifests = recurse_manifest(latest_mix_mom, latest_bundles, NULL);
+	if (!latest_mix_mom->submanifests) {
+		fprintf(stderr, "Error: Cannot load new mix MoM sub-manifests...continuing without adding mix content\n");
+		free_manifest(curr_mix_mom);
+		free_manifest(latest_mix_mom);
+		return ERECURSE_MANIFEST;
+	}
+	latest_mix_mom->files = files_from_bundles(latest_mix_mom->submanifests);
+	latest_mix_mom->files = consolidate_files(latest_mix_mom->files);
+
+	/* TODO: accounting may need to be seperated from official swupd stats */
+	link_manifests(curr_mix_mom, latest_mix_mom);
+
+	ret = download_subscribed_packs(mix_bundles, true);
+	if (ret) {
+		fprintf(stderr, "Cannot find packs for mix content\n");
+		free_manifest(curr_mix_mom);
+		free_manifest(latest_mix_mom);
+		return ENOSWUPDSERVER;
+	}
+
+	return 0;
+}
+
 int main_update()
 {
 	int current_version = -1, server_version = -1;
+	int curr_mix_version = -1, latest_mix_version = -1;
 	struct manifest *current_manifest = NULL, *server_manifest = NULL;
-	struct list **updates = {0, 0};
-	strict manifest **manifests = {0, 0};
+	struct manifest *curr_mix_mom = NULL, *latest_mix_mom = NULL;
+	struct list *updates[2] = {0, 0};
+	struct manifest *manifests[2] = {0, 0};
 	struct list *current_subs = NULL;
 	struct list *latest_subs = NULL;
 	struct list *mix_bundles = NULL;
+	struct list *latest_bundles = NULL;
 	int ret;
 	int lock_fd;
 	int retries = 0;
@@ -457,9 +533,10 @@ download_packs:
 	/* Step 6: some more housekeeping */
 	/* TODO: consider trying to do less sorting of manifests */
 
-	updates = create_update_list (current_manifest, server_manifest);
+	updates[0] = create_update_list(current_manifest, server_manifest);
+	manifests[0] = server_manifest;
 
-	link_renames(updates, current_manifest); /* TODO: Have special lists for candidate and renames */
+	link_renames(updates[0], current_manifest); /* TODO: Have special lists for candidate and renames */
 
 	print_statistics(current_version, server_version);
 	grabtime_stop(&times);
@@ -470,14 +547,19 @@ download_packs:
 	 * created before their contents
 	 */
 	grabtime_start(&times, "Update Loop");
-	updates = list_sort(updates, file_sort_filename);
+	updates[0] = list_sort(updates[0], file_sort_filename);
 
 	/* Yell loudly if things fail here...but don't kill the regular update if local content fails to add */
-	if (mix_exists()) {
-		read_subscriptions_alt(&mix_bundles);
+	if (check_mix_exists()) {
+		ret = setup_mix_update(curr_mix_mom, latest_mix_mom, &curr_mix_version, &latest_mix_version, mix_bundles, latest_bundles);
+		if (ret == 0) {
+			updates[1] = create_update_list(curr_mix_mom, latest_mix_mom);
+			updates[1] = list_sort(updates[1], file_sort_filename);
+			manifests[1] = latest_mix_mom;
+		}
 	}
 
-	ret = update_loop(updates, server_manifests);
+	ret = update_loop(updates, manifests);
 	if (ret == 0) {
 		/* Failure to write the version file in the state directory
 		 * should not affect exit status. */
@@ -496,7 +578,7 @@ download_packs:
 	grabtime_stop(&times);
 
 clean_exit:
-	list_free_list(updates);
+	list_free_list(updates[0]);
 	free_manifest(current_manifest);
 	free_manifest(server_manifest);
 
