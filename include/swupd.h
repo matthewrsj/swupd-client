@@ -159,6 +159,7 @@ extern int set_content_url(char *url);
 extern int set_version_url(char *url);
 extern void set_cert_path(char *path);
 extern bool set_state_dir(char *path);
+extern bool set_mix_globals(void);
 
 extern void check_root(void);
 extern void clean_curl_multi_queue(void);
@@ -173,6 +174,7 @@ extern void read_versions(int *current_version, int *server_version, char *path_
 extern int check_versions(int *current_version, int *server_version, char *path_prefix);
 extern int get_current_version(char *path_prefix);
 
+extern bool check_mix_exists(void);
 extern bool check_network(void);
 
 extern bool ignore(struct file *file);
@@ -181,6 +183,7 @@ extern void apply_heuristics(struct file *file);
 extern int file_sort_filename(const void *a, const void *b);
 extern int file_sort_filename_reverse(const void *a, const void *b);
 extern struct manifest *load_mom(int version);
+extern struct manifest *load_mix_mom(int version);
 extern struct manifest *load_manifest(int current, int version, struct file *file, struct manifest *mom, bool header_only);
 extern struct list *create_update_list(struct manifest *current, struct manifest *server);
 extern void link_manifests(struct manifest *m1, struct manifest *m2);
@@ -268,6 +271,7 @@ void swupd_curl_test_resume(void);
 extern void free_subscriptions(struct list **subs);
 extern void read_subscriptions(void);
 extern void read_subscriptions_alt(struct list **subs);
+extern void read_mix_subscriptions(struct list **subs);
 extern int component_subscribed(struct list *subs, char *component);
 extern void set_subscription_versions(struct manifest *latest, struct manifest *current, struct list **subs);
 
