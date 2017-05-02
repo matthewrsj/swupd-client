@@ -89,6 +89,10 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 
 static int stage_content(struct list *updates, struct manifest *manifest)
 {
+	struct file *file;
+	struct list *iter;
+	int ret;
+
 	/* starting at list_head in the filename alpha-sorted updates list
 	 * means node directories are added before leaf files */
 	printf("Staging file content\n");
@@ -117,8 +121,6 @@ static int stage_content(struct list *updates, struct manifest *manifest)
 static int update_loop(struct list **updates_list, struct manifest **manifests)
 {
 	int ret;
-	struct file *file;
-	struct list *iter;
 	struct list *failed = NULL;
 	struct list *updates = updates_list[0];
 	struct list *mix_content = updates_list[0];
@@ -172,7 +174,7 @@ TRY_DOWNLOAD:
 			return err;
 		}
 
-		try_delta_loop(mix_content, 0);
+		try_delta_loop(mix_content);
 		failed = full_download_loop(mix_content, 0);
 		/* There is nothing to retry from with local download */
 		if (list_head(failed)) {
