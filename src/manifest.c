@@ -1396,3 +1396,41 @@ struct file *search_file_in_manifest(struct manifest *manifest, const char *file
 	}
 	return NULL;
 }
+
+/* Ideally have the manifest sorted already by this point */
+char **manifest_files_to_array(struct manifest *manifest)
+{
+	char **array;
+	struct list *iter;
+	struct file *file;
+	int i = 0;
+	int numfiles = manifest->filecount;
+
+	if (!manifest) {
+		fprintf(stderr, "Manifest is NULL!\n");
+		return NULL;
+	}
+
+	array = malloc(sizeof(struct file *) * numfiles);
+
+	iter = list_head(manifest->files);
+	while (iter) {
+		file = iter->data;
+		iter = iter->next;
+		array[i] = file->filename;
+		i++;
+	}
+	return array;
+}
+
+void print_manifest_array(char **array, int filecount)
+{
+	for (int i = 0; i < filecount; i++) {
+		printf("%s\n", array[i]);
+	}
+}
+
+void free_manifest_array(struct file **array)
+{
+	free(array);
+}

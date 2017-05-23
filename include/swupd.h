@@ -348,6 +348,9 @@ typedef enum telem_prio_t {
 } telem_prio_t;
 extern void telemetry(telem_prio_t level, const char *class, const char *fmt, ...);
 
+extern char **manifest_files_to_array(struct manifest *manifest);
+extern void print_manifest_array(char **array, int filecount);
+
 /* some disk sizes constants for the various features:
  *   ...consider adding build automation to catch at build time
  *      if the build's artifacts are larger than these thresholds */
