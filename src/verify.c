@@ -618,6 +618,7 @@ int verify_main(int argc, char **argv)
 	int timeout = 10;
 	struct list *subs = NULL;
 	timelist times;
+	bool mix_exists;
 
 	copyright_header("software verify");
 
@@ -662,6 +663,8 @@ int verify_main(int argc, char **argv)
 		goto clean_and_exit;
 	}
 
+	mix_exists = check_mix_exists();
+
 	read_subscriptions_alt(&subs);
 
 	/*
@@ -677,7 +680,7 @@ int verify_main(int argc, char **argv)
 	times = init_timelist();
 
 	grabtime_start(&times, "Load and recurse Manifests");
-	official_manifest = load_mom(version, false, false);
+	official_manifest = load_mom(version, false, mix_exists);
 
 	if (!official_manifest) {
 		/* This is hit when or if an OS version is specified for --fix which

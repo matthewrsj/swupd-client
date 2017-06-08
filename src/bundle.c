@@ -378,7 +378,6 @@ int add_subscriptions(struct list *bundles, struct list **subs, int current_vers
 		}
 
 	retry_manifest_download:
-		printf("add_subscriptions: load_manifest(): %s %d\n", file->filename, file->is_mix);
 		manifest = load_manifest(current_version, file->last_change, file, mom, true);
 		if (!manifest) {
 			if (retries < MAX_TRIES) {
@@ -565,6 +564,7 @@ int install_bundles_frontend(char **bundles)
 	struct list *subs = NULL;
 	char *bundles_list_str = NULL;
 	timelist times;
+	bool mix_exists;
 
 	/* initialize swupd and get current version from OS */
 	ret = swupd_init(&lock_fd);
@@ -580,9 +580,11 @@ int install_bundles_frontend(char **bundles)
 		goto clean_and_exit;
 	}
 
+	mix_exists = check_mix_exists();
+
 	swupd_curl_set_current_version(current_version);
 
-	mom = load_mom(current_version, false, false);
+	mom = load_mom(current_version, false, mix_exists);
 	if (!mom) {
 		fprintf(stderr, "Cannot load official manifest MoM for version %i\n", current_version);
 		ret = EMOM_NOTFOUND;

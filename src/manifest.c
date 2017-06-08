@@ -742,8 +742,10 @@ struct manifest *load_manifest(int current, int version, struct file *file, stru
 	bool retried = false;
 	bool mark_files_mix = false;
 	char *basedir = NULL;
+
+	/* We must set all the files for a manifest marked as "mix" or local as being such so they can be
+	 * downloaded correctly later on. */
 	if (file->is_mix) {
-		printf("FOUND %s MIX MANIFEST\n", file->filename);
 		basedir = MIX_STATE_DIR;
 		mark_files_mix = true;
 	}

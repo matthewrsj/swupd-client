@@ -83,10 +83,9 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 			string_or_die(&url, "%s/%i/files/%s.tar", MIX_STATE_DIR, file->last_change, file->hash);
 			string_or_die(&filename, "%s/download/.%s.tar", state_dir, file->hash);
 			file->staging = filename;
-			printf("GETTING %s and downloading to %s\n", url, filename);
 			link(url, filename);
-			free(filename);
-			free(url);
+
+			untar_full_download(file);
 			continue;
 		}
 		full_download(file);
