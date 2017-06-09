@@ -220,6 +220,7 @@ int remove_bundle(const char *bundle_name)
 	int current_version = CURRENT_OS_VERSION;
 	struct manifest *current_mom, *bundle_manifest = NULL;
 	struct list *subs = NULL;
+	bool mix_exists;
 
 	ret = swupd_init(&lock_fd);
 	if (ret != 0) {
@@ -250,9 +251,11 @@ int remove_bundle(const char *bundle_name)
 		goto out_free_curl;
 	}
 
+	mix_exists = check_mix_exists();
+
 	swupd_curl_set_current_version(current_version);
 
-	current_mom = load_mom(current_version, false, false);
+	current_mom = load_mom(current_version, false, mix_exists);
 	if (!current_mom) {
 		fprintf(stderr, "Unable to download/verify %d Manifest.MoM\n", current_version);
 		ret = EMOM_NOTFOUND;

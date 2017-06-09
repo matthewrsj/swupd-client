@@ -563,12 +563,28 @@ static int retrieve_manifests(int current, int version, char *component, char *s
 
 	/* If it's mix content just hardlink instead of curl download */
 	if (is_mix) {
-		char *staged;
-		string_or_die(&filename, "%s/%i/Manifest.%s.tar", basedir, version, component);
-		string_or_die(&staged, "%s/%i/Manifest.%s.tar", state_dir, version, component);
-		link(filename, staged);
-		free(staged);
-	} else {
+		string_or_die(&filename, "%s/%i/Manifest.%s.tar", state_dir, version, component);
+		string_or_die(&url, "%s/%i/Manifest.%s.tar", basedir, version, component);
+		ret = link(url, filename);
+		if (ret == 0) {
+			goto untar;
+		}
+		free(filename);
+		free(url);
+	}
+
+	/* Either we're not on mix or it failed, try curl-ing the file if link didn't work */
+	string_or_die(&filename, "%s/%i/Manifest.%s.tar", state_dir, version, component);
+	string_or_die(&url, "%s/%i/Manifest.%s.tar", content_url, version, component);
+
+	ret = swupd_curl_get_file(url, filename, NULL, NULL, false);
+	if (ret) {
+		unlink(filename);
+		goto out;
+	}
+
+	if (ret) {
+		free(filename);
 		string_or_die(&filename, "%s/%i/Manifest.%s.tar", state_dir, version, component);
 		string_or_die(&url, "%s/%i/Manifest.%s.tar", content_url, version, component);
 
@@ -579,6 +595,7 @@ static int retrieve_manifests(int current, int version, char *component, char *s
 		}
 	}
 
+untar:
 	string_or_die(&tar, TAR_COMMAND " -C %s/%i -xf %s/%i/Manifest.%s.tar 2> /dev/null",
 		      state_dir, version, state_dir, version, component);
 
