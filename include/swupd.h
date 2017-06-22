@@ -21,6 +21,8 @@ extern "C" {
 #define SWUPD_VERSION_IS_DEVEL(v) (((v) % SWUPD_VERSION_INCR) == 8)
 #define SWUPD_VERSION_IS_RESVD(v) (((v) % SWUPD_VERSION_INCR) == 9)
 
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+
 #ifndef LINE_MAX
 #define LINE_MAX _POSIX2_LINE_MAX
 #endif
@@ -33,6 +35,9 @@ extern "C" {
 #define MAX_TRIES 3
 
 #define SWUPD_HASH_DIRNAME "DIRECTORY"
+#define MIX_DIR "/usr/share/mix/"
+#define MIX_STATE_DIR MIX_DIR "update/www/"
+#define MIX_BUNDLES_DIR MIX_STATE_DIR "mix-bundles/"
 
 struct sub {
 	/* name of bundle/component/subscription */
@@ -45,6 +50,7 @@ struct sub {
 
 	/* oldversion: set to 0 by calloc(), possibly overridden by MoM read */
 	int oldversion;
+	int is_mix : 1;
 };
 
 struct manifest {
@@ -57,6 +63,7 @@ struct manifest {
 	struct list *submanifests; /* struct manifest for subscribed manifests */
 	struct list *includes;     /* manifest names included in manifest */
 	char *component;
+	unsigned int is_mix : 1;
 };
 
 struct version_container {
@@ -110,6 +117,7 @@ struct file {
 	unsigned int is_boot : 1;
 	unsigned int is_rename : 1;
 	unsigned int is_orphan : 1;
+	unsigned int is_mix : 1;
 	unsigned int do_not_update : 1;
 
 	struct file *peer;      /* same file in another manifest */
@@ -189,8 +197,9 @@ extern void apply_heuristics(struct file *file);
 
 extern int file_sort_filename(const void *a, const void *b);
 extern int file_sort_filename_reverse(const void *a, const void *b);
-extern struct manifest *load_mom(int version, bool latest);
+extern struct manifest *load_mom(int version, bool latest, bool mix_exists);
 extern struct manifest *load_manifest(int current, int version, struct file *file, struct manifest *mom, bool header_only);
+extern struct manifest *load_manifest_full(int version, bool mix);
 extern struct list *create_update_list(struct manifest *current, struct manifest *server);
 extern void link_manifests(struct manifest *m1, struct manifest *m2);
 extern void link_submanifests(struct manifest *m1, struct manifest *m2, struct list *subs1, struct list *subs2, bool server);
@@ -257,7 +266,7 @@ static inline void account_delta_miss(void)
 
 extern void print_statistics(int version1, int version2);
 
-extern int download_subscribed_packs(struct list *subs, bool required);
+extern int download_subscribed_packs(struct list *subs, struct manifest *mom, bool required);
 
 extern void try_delta(struct file *file);
 extern void full_download(struct file *file);
@@ -368,7 +377,11 @@ extern void telemetry(telem_prio_t level, const char *class, const char *fmt, ..
 
 extern struct file **manifest_files_to_array(struct manifest *manifest);
 extern void print_manifest_array(struct file **array, int filecount);
-int enforce_compliant_manifest(struct file **a, struct file **b, int size);
+extern int enforce_compliant_manifest(struct file **a, struct file **b, int searchsize, int size);
+extern void free_manifest_array(struct file **array);
+
+extern bool check_mix_exists(void);
+extern int check_mix_versions(int *current_version, int *server_version, char *path_prefix);
 
 /* some disk sizes constants for the various features:
  *   ...consider adding build automation to catch at build time

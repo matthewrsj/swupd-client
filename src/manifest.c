@@ -162,7 +162,7 @@ static struct manifest *alloc_manifest(int version, char *component)
 	return manifest;
 }
 
-static struct manifest *manifest_from_file(int version, char *component, bool header_only, bool latest)
+static struct manifest *manifest_from_file(int version, char *component, char *statepath, bool header_only, bool latest, bool is_mix)
 {
 	FILE *infile;
 	char line[MANIFEST_LINE_MAXLEN], *c, *c2;
@@ -587,7 +587,7 @@ static void set_untracked_manifest_files(struct manifest *manifest)
 void remove_manifest_files(char *filename, int version, char *hash)
 {
 	char *file;
-
+	
 	fprintf(stderr, "Warning: Removing corrupt Manifest.%s artifacts and re-downloading...\n", filename);
 	string_or_die(&file, "%s/%i/Manifest.%s", state_dir, version, filename);
 	unlink(file);
@@ -616,23 +616,30 @@ void remove_manifest_files(char *filename, int version, char *hash)
  * Note that if the manifest fails to download, or if the manifest fails to be
  * loaded into memory, this function will return NULL.
  */
-struct manifest *load_mom(int version, bool latest)
+struct manifest *load_mom(int version, bool latest, bool mix_exists)
 {
 	struct manifest *manifest = NULL;
 	int ret = 0;
 	char *filename;
 	char *url;
+	char *basedir = NULL;
 	char *log_cmd = NULL;
 	bool retried = false;
 
+	if (mix_exists) {
+		basedir = MIX_STATE_DIR;
+	} else {
+		basedir = state_dir;
+	}
+
 verify_mom:
-	ret = retrieve_manifests(version, version, "MoM", NULL);
+	ret = retrieve_manifests(version, version, "MoM", basedir, NULL);
 	if (ret != 0) {
 		fprintf(stderr, "Failed to retrieve %d MoM manifest\n", version);
 		return NULL;
 	}
 
-	manifest = manifest_from_file(version, "MoM", false, latest);
+	manifest = manifest_from_file(version, "MoM", state_dir, false, latest, false);
 
 	if (manifest == NULL) {
 		if (retried == false) {
@@ -646,10 +653,10 @@ verify_mom:
 
 	string_or_die(&filename, "%s/%i/Manifest.MoM", state_dir, version);
 	string_or_die(&url, "%s/%i/Manifest.MoM", content_url, version);
-	if (!download_and_verify_signature(url, filename)) {
+	if (!download_and_verify_signature(url, filename, version, mix_exists)) {
 		if (sigcheck) {
 			/* cleanup and try one more time, statedir could have got corrupt/stale */
-			if (retried == false) {
+			if (retried == false && !mix_exists) {
 				remove_manifest_files("MoM", version, NULL);
 				retried = true;
 				goto verify_mom;
@@ -667,12 +674,14 @@ verify_mom:
 			free(log_cmd);
 		}
 	}
+	printf("MOM IS GOODDDD\n");
 	free(filename);
 	free(url);
-
+	printf("manifest is %s\n", manifest->component);
 	return manifest;
 
 out:
+	printf("why\n");
 	return NULL;
 }
 
@@ -691,12 +700,19 @@ out:
  * loaded into memory, this function will return NULL.
  */
 struct manifest *load_manifest(int current, int version, struct file *file, struct manifest *mom, bool header_only)
-{
-	struct manifest *manifest = NULL;
+{	struct manifest *manifest = NULL;
 	int ret = 0;
 	bool retried = false;
+	bool mark_files_mix = false;
+	char *basedir = NULL;
+	if (file->is_mix) {
+		printf("FOUND %s MIX MANIFEST\n", file->filename);
+		basedir = MIX_STATE_DIR;
+		mark_files_mix = true;
+	}
+
 retry_load:
-	ret = retrieve_manifests(current, version, file->filename, file);
+	ret = retrieve_manifests(current, version, file->filename, basedir, file);
 	if (ret != 0) {
 		fprintf(stderr, "Failed to retrieve %d %s manifest\n", version, file->filename);
 		return NULL;
@@ -716,7 +732,7 @@ retry_load:
 	}
 	retried = false;
 
-	manifest = manifest_from_file(version, file->filename, header_only, false);
+	manifest = manifest_from_file(version, file->filename, basedir, header_only, false, mark_files_mix);
 
 	if (manifest == NULL) {
 		if (retried == false) {
@@ -1426,8 +1442,9 @@ struct file **manifest_files_to_array(struct manifest *manifest)
 void print_manifest_array(struct file **array, int filecount)
 {
 	for (int i = 0; i < filecount; i++) {
-		printf("%s\n", array[i]->filename);
+		printf("[%d]/%d %s\n", i, filecount, array[i]->filename);
 	}
+	printf("SIZE: %d\n", filecount);
 }
 
 void free_manifest_array(struct file **array)

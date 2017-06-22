@@ -35,7 +35,7 @@
 #include "swupd-build-variant.h"
 #include "swupd.h"
 
-static int download_pack(int oldversion, int newversion, char *module)
+static int download_pack(int oldversion, int newversion, char *module, int is_mix)
 {
 	FILE *tarfile = NULL;
 	char *tar = NULL;
@@ -92,7 +92,7 @@ static int download_pack(int oldversion, int newversion, char *module)
 }
 
 /* pull in packs for base and any subscription */
-int download_subscribed_packs(struct list *subs, bool required)
+int download_subscribed_packs(struct list *subs, struct manifest *mom, bool required)
 {
 	struct list *iter;
 	struct sub *sub = NULL;
@@ -111,8 +111,9 @@ int download_subscribed_packs(struct list *subs, bool required)
 		if (sub->oldversion == sub->version) { // pack didn't change in this release
 			continue;
 		}
-
-		err = download_pack(sub->oldversion, sub->version, sub->component);
+		printf("Getting pack %s %d \n", sub->component, sub->version);
+		int is_mix = search_bundle_in_manifest(mom, sub->component)->is_mix;
+		err = download_pack(sub->oldversion, sub->version, sub->component, is_mix);
 		if (err < 0) {
 			if (required) {
 				return err;

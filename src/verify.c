@@ -245,7 +245,7 @@ static int get_all_files(struct manifest *official_manifest, struct list *subs)
 	struct list *iter;
 
 	/* for install we need everything so synchronously download zero packs */
-	ret = download_subscribed_packs(subs, true);
+	ret = download_subscribed_packs(subs, official_manifest, true);
 	if (ret < 0) { // require zero pack
 		/* If we hit this point, we know we have a network connection, therefore
 		 * 	the error is server-side. This is also a critical error, so detailed
@@ -677,7 +677,7 @@ int verify_main(int argc, char **argv)
 	times = init_timelist();
 
 	grabtime_start(&times, "Load and recurse Manifests");
-	official_manifest = load_mom(version, false);
+	official_manifest = load_mom(version, false, false);
 
 	if (!official_manifest) {
 		/* This is hit when or if an OS version is specified for --fix which
