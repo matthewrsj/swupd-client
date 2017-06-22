@@ -378,7 +378,7 @@ static struct manifest *manifest_from_file(int version, char *component, char *s
 
 		/* Mark every file in a mix manifest as also being mix content since we do not
 		 * have another flag to check for like we do in the MoM */
-		if (is_mix) {
+		if (is_mix && strcmp(component, "MoM") != 0) {
 			file->is_mix = 1;
 		}
 
@@ -693,7 +693,7 @@ verify_mom:
 		return NULL;
 	}
 
-	manifest = manifest_from_file(version, "MoM", state_dir, false, latest, false);
+	manifest = manifest_from_file(version, "MoM", state_dir, false, latest, mix_exists);
 
 	if (manifest == NULL) {
 		if (retried == false) {
@@ -715,7 +715,7 @@ verify_mom:
 				retried = true;
 				goto verify_mom;
 			}
-			fprintf(stderr, "WARNING!!! FAILED TO VERIFY SIGNATURE OF Manifest.MoM\n");
+			fprintf(stderr, "WARNING!!! FAILED TO VERIFY SIGNATURE OF Manifest.MoM version %d\n", version);
 			free(filename);
 			free(url);
 			return NULL;
@@ -785,9 +785,11 @@ retry_load:
 		}
 		return NULL;
 	}
-	retried = false;
+	if (!retried) {
+		retried = false;
+	}
 
-	manifest = manifest_from_file(version, file->filename, basedir, header_only, false, mark_files_mix);
+	manifest = manifest_from_file(version, file->filename, basedir, header_only, false, file->is_mix);
 
 	if (manifest == NULL) {
 		if (retried == false) {
