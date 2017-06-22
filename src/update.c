@@ -104,13 +104,20 @@ int check_manifests_uniqueness(int clrver, int mixver)
 {
 	struct manifest *clear = load_manifest_full(clrver, false);
 	struct manifest *mixer = load_manifest_full(mixver, true);
-	//clear->files = list_sort(clear->files, file_sort_filename_reverse);
-	//mixer->files = list_sort(mixer->files, file_sort_filename_reverse);
+	if (!clear || !mixer) {
+		fprintf(stderr, "ERROR: Could not load full manifests\n");
+		return -1;
+	}
 
 	struct file **clearfull = manifest_files_to_array(clear);
 	struct file **mixerfull = manifest_files_to_array(mixer);
 
-	int ret = enforce_compliant_manifest(mixerfull, clearfull , mixer->filecount, clear->filecount);
+	if (clearfull == NULL || mixerfull == NULL) {
+		fprintf(stderr, "Could not convert full manifest to array\n");
+		abort();
+	}
+
+	int ret = enforce_compliant_manifest(mixerfull, clearfull, mixer->filecount, clear->filecount);
 
 	free_manifest_array(clearfull);
 	free_manifest_array(mixerfull);
