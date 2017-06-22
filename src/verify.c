@@ -308,6 +308,20 @@ static struct list *download_loop(struct list *files, int isfailed)
 		}
 
 		if (hash_needs_work(file, local.hash)) {
+			/* Mix content is local, so don't queue files up for curl downloads */
+			if (file->is_mix) {
+				char *filename;
+				char *url;
+				string_or_die(&url, "%s/%i/files/%s.tar", MIX_STATE_DIR, file->last_change, file->hash);
+				string_or_die(&filename, "%s/download/.%s.tar", state_dir, file->hash);
+				file->staging = filename;
+				link(url, filename);
+
+				untar_full_download(file);
+				free(filename);
+				free(url);
+				continue;
+			}
 			full_download(file);
 		} else {
 			/* mark the file as good to save time later */
