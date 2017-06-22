@@ -208,7 +208,7 @@ int read_mix_version_file(char *filename, char *path_prefix)
 
 int check_mix_versions(int *current_version, int *server_version, char *path_prefix)
 {
-	*current_version = read_mix_version_file(MIX_DIR "version", path_prefix);
+	*current_version = read_mix_version_file("/usr/share/clear/version", path_prefix);
 	*server_version = read_mix_version_file(MIX_STATE_DIR "version/format1/latest", path_prefix);
 }
 int update_device_latest_version(int version)
