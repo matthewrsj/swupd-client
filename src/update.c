@@ -555,6 +555,15 @@ download_packs:
 	run_scripts();
 	grabtime_stop(&times);
 
+	/* Create the state file that will tell swupd it's on a mix on future runs */
+	if (mix_exists && !system_on_mix()) {
+		int fd = open("/usr/share/defaults/swupd/mixed", O_RDWR | O_CREAT, S_IRWXU | S_IRGRP | S_IROTH);
+		if (fd == -1) {
+			fprintf(stderr, "ERROR: Failed to create 'mixed' statefile\n");
+		}
+		close(fd);
+	}
+
 clean_exit:
 	list_free_list(updates);
 	free_manifest(current_manifest);
