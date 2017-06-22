@@ -272,6 +272,17 @@ static bool system_on_mix(void)
 	return !access("/usr/share/defaults/swupd/mixed", R_OK);
 }
 
+static bool need_new_upstream(int server)
+{
+	if (!access("/usr/share/mix/.clearversion", R_OK)) {
+		int version = read_mix_version_file("/usr/share/mix/.clearversion", path_prefix);
+		if (version < server) {
+			return true;
+		}
+	}
+	return false;
+}
+
 int main_update()
 {
 	int current_version = -1, server_version = -1;
@@ -317,17 +328,12 @@ int main_update()
 
 	read_subscriptions_alt(&current_subs);
 
-	/* Step 1: get versions */
-
+/* Step 1: get versions */
+version_check:
 	ret = check_versions(&current_version, &server_version, path_prefix);
 
 	if (ret < 0) {
 		ret = EXIT_FAILURE;
-		goto clean_curl;
-	}
-	if (server_version <= current_version) {
-		fprintf(stderr, "Version on server (%i) is not newer than system version (%i)\n", server_version, current_version);
-		ret = EXIT_SUCCESS;
 		goto clean_curl;
 	}
 
@@ -337,14 +343,33 @@ int main_update()
 			ret = EXIT_FAILURE;
 			goto clean_curl;
 		}
-		ret = check_manifests_uniqueness(server_version, mix_server_version);
-		if (ret) {
-			printf("\n\t!! %i collisions were found between mix and upstream, please re-create mix !!\n", ret);
-		} else {
-			printf("OK! Manifests are compatible\n");
+		/* Check if a new upstream version is available so we can update to it still */
+		if (need_new_upstream(server_version)) {
+			printf("NEW CLEAR AVAILABLE %d\n", server_version);
+			ret = check_manifests_uniqueness(server_version, mix_server_version);
+			if (ret) {
+				printf("\n\t!! %i collisions were found between mix and upstream, please re-create mix !!\n", ret);
+			}
+
+			/* Update the clearversion that will be used to generate the new mix content */
+			FILE *verfile = fopen(MIX_DIR ".clearversion", "w+");
+			if (!verfile) {
+				fprintf(stderr, "ERROR: fopen() returned %s\n", strerror(errno));
+			}
+			fprintf(verfile, "%d", server_version);
+			fclose(verfile);
+
+			system("/usr/bin/add-pkg.sh");
+			goto version_check;
 		}
 		current_version = mix_current_version;
 		server_version = mix_server_version;
+	}
+
+	if (server_version <= current_version) {
+		fprintf(stderr, "Version on server (%i) is not newer than system version (%i)\n", server_version, current_version);
+		ret = EXIT_SUCCESS;
+		goto clean_curl;
 	}
 
 	fprintf(stderr, "Preparing to update from %i to %i\n", current_version, server_version);
