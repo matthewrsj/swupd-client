@@ -754,17 +754,16 @@ out:
  * loaded into memory, this function will return NULL.
  */
 struct manifest *load_manifest(int current, int version, struct file *file, struct manifest *mom, bool header_only)
-{	struct manifest *manifest = NULL;
+{
+	struct manifest *manifest = NULL;
 	int ret = 0;
 	bool retried = false;
-	bool mark_files_mix = false;
 	char *basedir = NULL;
 
 	/* We must set all the files for a manifest marked as "mix" or local as being such so they can be
 	 * downloaded correctly later on. */
 	if (file->is_mix) {
 		basedir = MIX_STATE_DIR;
-		mark_files_mix = true;
 	}
 
 retry_load:

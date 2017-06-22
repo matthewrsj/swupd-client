@@ -274,7 +274,6 @@ int main_update()
 	struct list *updates = NULL;
 	struct list *current_subs = NULL;
 	struct list *latest_subs = NULL;
-	struct list *mix_bundles = NULL;
 	int ret;
 	int lock_fd;
 	int retries = 0;
@@ -356,7 +355,6 @@ int main_update()
 	grabtime_start(&times, "Load Manifests:");
 load_current_mom:
 	/* Step 3: setup manifests */
-	printf("loading CURRENT MOM\n");
 	/* get the from/to MoM manifests */
 	if (system_on_mix()) {
 		current_manifest = load_mom(current_version, false, mix_exists);
@@ -381,7 +379,6 @@ load_current_mom:
 	timeout = 10;
 
 load_server_mom:
-	printf("loading SERVER (NEW) MOM\n");
 	grabtime_stop(&times); // Close step 2
 	grabtime_start(&times, "Recurse and Consolidate Manifests");
 	server_manifest = load_mom(server_version, true, mix_exists);
@@ -401,7 +398,6 @@ load_server_mom:
 	timeout = 10;
 
 load_current_submanifests:
-	printf("loading current submanifests\n");
 	/* Read the current collective of manifests that we are subscribed to.
 	 * First load up the old (current) manifests. Statedir could have been cleared
 	 * or corrupt, so don't assume things are already there. Updating subscribed
@@ -432,7 +428,6 @@ load_current_submanifests:
 	/* The new subscription is seeded from the list of currently installed bundles
 	 * This calls add_subscriptions which recurses for new includes */
 	grabtime_start(&times, "Add Included Manifests");
-	printf("Adding included manifests...\n");
 	ret = add_included_manifests(server_manifest, current_version, &latest_subs);
 	grabtime_stop(&times);
 	if (ret) {
@@ -441,7 +436,6 @@ load_current_submanifests:
 	}
 
 load_server_submanifests:
-	printf("Loading NEW submanifests\n");
 	/* read the new collective of manifests that we are subscribed to in the new MoM */
 	server_manifest->submanifests = recurse_manifest(server_manifest, latest_subs, NULL);
 	if (!server_manifest->submanifests) {
