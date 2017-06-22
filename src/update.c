@@ -124,7 +124,6 @@ void setup_mix_update()
 {
 }
 
-
 static int update_loop(struct list *updates, struct manifest *server_manifest)
 {
 	int ret;

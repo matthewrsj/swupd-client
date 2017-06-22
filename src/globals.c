@@ -187,13 +187,13 @@ bool check_mix_exists(void)
 		free(fullpath);
 		return false;
 	}
-	for(i = 0; i < 3; i++) {
+	for (i = 0; i < 3; i++) {
 		entry = readdir(dir);
 		if (!entry) {
 			break;
 		}
 		if (!strcmp(entry->d_name, ".") ||
-			!strcmp(entry->d_name, "..")) {
+		    !strcmp(entry->d_name, "..")) {
 			continue;
 		}
 	}

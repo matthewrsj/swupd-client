@@ -641,7 +641,7 @@ static void set_untracked_manifest_files(struct manifest *manifest)
 void remove_manifest_files(char *filename, int version, char *hash)
 {
 	char *file;
-	
+
 	fprintf(stderr, "Warning: Removing corrupt Manifest.%s artifacts and re-downloading...\n", filename);
 	string_or_die(&file, "%s/%i/Manifest.%s", state_dir, version, filename);
 	unlink(file);
@@ -1551,9 +1551,9 @@ int enforce_compliant_manifest(struct file **a, struct file **b, int searchsize,
 		found = bsearch(a[i], b, size, sizeof(struct file *), bsearch_file_helper);
 		if (found) {
 			if (strcmp(a[i]->filename, "/usr/lib/os-release") == 0 ||
-				strcmp(a[i]->filename, "/usr/share/clear/version") == 0 ||
-				strcmp(a[i]->filename, "/usr/share/clear/versionstamp") == 0) {
-					continue;			
+			    strcmp(a[i]->filename, "/usr/share/clear/version") == 0 ||
+			    strcmp(a[i]->filename, "/usr/share/clear/versionstamp") == 0) {
+				continue;
 			}
 			if (hash_equal(a[i]->hash, (*found)->hash)) {
 				continue;

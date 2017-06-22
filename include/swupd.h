@@ -218,7 +218,7 @@ static inline int bsearch_helper(const void *A, const void *B)
 
 static inline int bsearch_file_helper(const void *A, const void *B)
 {
-	struct file *key = (struct file *) A;
+	struct file *key = (struct file *)A;
 	struct file *elem = (*(struct file **)B);
 	return strcmp(key->filename, elem->filename);
 }
