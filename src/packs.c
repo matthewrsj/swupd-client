@@ -52,19 +52,26 @@ static int download_pack(int oldversion, int newversion, char *module, int is_mi
 		return 0;
 	}
 
-	string_or_die(&url, "%s/%i/pack-%s-from-%i.tar", content_url, newversion, module, oldversion);
-
-	err = swupd_curl_get_file(url, filename, NULL, NULL, true);
-	if (err) {
+	if (is_mix) {
+		string_or_die(&url, "%s/%i/pack-%s-from-%i.tar", MIX_STATE_DIR, newversion, module, oldversion);
+		link(url, filename);
+		printf("Linked %s to %s\n", url, filename);
 		free(url);
-		if ((lstat(filename, &stat) == 0) && (stat.st_size == 0)) {
-			unlink(filename);
-		}
-		free(filename);
-		return err;
-	}
+	} else {
+		string_or_die(&url, "%s/%i/pack-%s-from-%i.tar", content_url, newversion, module, oldversion);
 
-	free(url);
+		err = swupd_curl_get_file(url, filename, NULL, NULL, true);
+		if (err) {
+			free(url);
+			if ((lstat(filename, &stat) == 0) && (stat.st_size == 0)) {
+				unlink(filename);
+			}
+			free(filename);
+			return err;
+		}
+
+		free(url);
+	}
 
 	fprintf(stderr, "Extracting %s pack for version %i\n", module, newversion);
 	string_or_die(&tar, TAR_COMMAND " -C %s " TAR_PERM_ATTR_ARGS " -xf %s/pack-%s-from-%i-to-%i.tar 2> /dev/null",

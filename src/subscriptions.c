@@ -111,6 +111,38 @@ void read_subscriptions_alt(struct list **subs)
 	*subs = list_sort(*subs, subscription_sort_component);
 }
 
+/* Custom content comes from a different location and is not required to
+ * have os-core added */
+void read_mix_subscriptions(struct list **subs)
+{
+	char *path = NULL;
+	DIR *dir;
+	struct dirent *ent;
+
+	string_or_die(&path, "%s/%s", path_prefix, MIX_BUNDLES_DIR);
+
+	dir = opendir(path);
+	if (dir) {
+		while ((ent = readdir(dir))) {
+			if ((strcmp(ent->d_name, ".") == 0) || (strcmp(ent->d_name, "..") == 0)) {
+				continue;
+			}
+			if (ent->d_type == DT_REG) {
+				if (component_subscribed(*subs, ent->d_name)) {
+					/*  This is considered odd since means two files same name on same folder */
+					continue;
+				}
+				create_and_append_subscription(subs, ent->d_name);
+			}
+		}
+
+		closedir(dir);
+	}
+
+	free(path);
+	*subs = list_sort(*subs, subscription_sort_component);
+}
+
 int component_subscribed(struct list *subs, char *component)
 {
 	struct list *list;

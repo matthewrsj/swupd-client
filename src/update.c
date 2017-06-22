@@ -67,6 +67,8 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 {
 	struct list *iter;
 	struct file *file;
+	char *filename;
+	char *url;
 
 	iter = list_head(updates);
 	while (iter) {
@@ -76,7 +78,17 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 		if (file->is_deleted) {
 			continue;
 		}
-
+		/* Mix content is local, so don't queue files up for curl downloads */
+		if (file->is_mix) {
+			string_or_die(&url, "%s/%i/files/%s.tar", MIX_STATE_DIR, file->last_change, file->hash);
+			string_or_die(&filename, "%s/download/.%s.tar", state_dir, file->hash);
+			file->staging = filename;
+			printf("GETTING %s and downloading to %s\n", url, filename);
+			link(url, filename);
+			free(filename);
+			free(url);
+			continue;
+		}
 		full_download(file);
 	}
 
@@ -86,6 +98,33 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 
 	return end_full_download();
 }
+
+/* This loads the upstream Clear Manifest.Full and local Manifest.full, and then checks
+ * that there are no conflicts between the files they both include */
+int check_manifests_uniqueness(int clrver, int mixver)
+{
+	struct manifest *clear = load_manifest_full(clrver, false);
+	struct manifest *mixer = load_manifest_full(mixver, true);
+	//clear->files = list_sort(clear->files, file_sort_filename_reverse);
+	//mixer->files = list_sort(mixer->files, file_sort_filename_reverse);
+
+	struct file **clearfull = manifest_files_to_array(clear);
+	struct file **mixerfull = manifest_files_to_array(mixer);
+
+	int ret = enforce_compliant_manifest(mixerfull, clearfull , mixer->filecount, clear->filecount);
+
+	free_manifest_array(clearfull);
+	free_manifest_array(mixerfull);
+	free_manifest(clear);
+	free_manifest(mixer);
+
+	return ret;
+}
+
+void setup_mix_update()
+{
+}
+
 
 static int update_loop(struct list *updates, struct manifest *server_manifest)
 {
@@ -223,13 +262,20 @@ static void run_postupdate_action(void)
 	free(post_update_action);
 }
 
+static bool system_on_mix(void)
+{
+	return !access("/usr/share/defaults/swupd/mixed", R_OK);
+}
+
 int main_update()
 {
 	int current_version = -1, server_version = -1;
+	int mix_current_version = -1, mix_server_version = -1;
 	struct manifest *current_manifest = NULL, *server_manifest = NULL;
 	struct list *updates = NULL;
 	struct list *current_subs = NULL;
 	struct list *latest_subs = NULL;
+	struct list *mix_bundles = NULL;
 	int ret;
 	int lock_fd;
 	int retries = 0;
@@ -237,6 +283,7 @@ int main_update()
 	struct timespec ts_start, ts_stop; // For main swupd update time
 	timelist times;
 	double delta;
+	bool mix_exists;
 
 	srand(time(NULL));
 
@@ -258,6 +305,8 @@ int main_update()
 		goto clean_curl;
 	}
 
+	mix_exists = check_mix_exists();
+
 	fprintf(stderr, "Update started.\n");
 
 	grabtime_start(&times, "Update Step 1: get versions");
@@ -278,6 +327,22 @@ int main_update()
 		goto clean_curl;
 	}
 
+	if (mix_exists) {
+		ret = check_mix_versions(&mix_current_version, &mix_server_version, path_prefix);
+		if (ret < 0) {
+			ret = EXIT_FAILURE;
+			goto clean_curl;
+		}
+		ret = check_manifests_uniqueness(server_version, mix_server_version);
+		if (ret) {
+			printf("\n\t!! %i collisions were found between mix and upstream, please re-create mix !!\n", ret);
+		} else {
+			printf("OK! Manifests are compatible\n");
+		}
+		current_version = mix_current_version;
+		server_version = mix_server_version;
+	}
+
 	fprintf(stderr, "Preparing to update from %i to %i\n", current_version, server_version);
 
 	/* Step 2: housekeeping */
@@ -292,9 +357,13 @@ int main_update()
 	grabtime_start(&times, "Load Manifests:");
 load_current_mom:
 	/* Step 3: setup manifests */
-
+	printf("loading CURRENT MOM\n");
 	/* get the from/to MoM manifests */
-	current_manifest = load_mom(current_version, false);
+	if (system_on_mix()) {
+		current_manifest = load_mom(current_version, false, mix_exists);
+	} else {
+		current_manifest = load_mom(current_version, false, false);
+	}
 	if (!current_manifest) {
 		/* TODO: possibly remove this as not getting a "from" manifest is not fatal
 		 * - we just don't apply deltas */
@@ -313,9 +382,10 @@ load_current_mom:
 	timeout = 10;
 
 load_server_mom:
+	printf("loading SERVER (NEW) MOM\n");
 	grabtime_stop(&times); // Close step 2
 	grabtime_start(&times, "Recurse and Consolidate Manifests");
-	server_manifest = load_mom(server_version, true);
+	server_manifest = load_mom(server_version, true, mix_exists);
 	if (!server_manifest) {
 		if (retries < MAX_TRIES) {
 			increment_retries(&retries, &timeout);
@@ -332,6 +402,7 @@ load_server_mom:
 	timeout = 10;
 
 load_current_submanifests:
+	printf("loading current submanifests\n");
 	/* Read the current collective of manifests that we are subscribed to.
 	 * First load up the old (current) manifests. Statedir could have been cleared
 	 * or corrupt, so don't assume things are already there. Updating subscribed
@@ -358,9 +429,11 @@ load_current_submanifests:
 	latest_subs = list_clone(current_subs);
 	set_subscription_versions(server_manifest, current_manifest, &latest_subs);
 	link_submanifests(current_manifest, server_manifest, current_subs, latest_subs, false);
+
 	/* The new subscription is seeded from the list of currently installed bundles
 	 * This calls add_subscriptions which recurses for new includes */
 	grabtime_start(&times, "Add Included Manifests");
+	printf("Adding included manifests...\n");
 	ret = add_included_manifests(server_manifest, current_version, &latest_subs);
 	grabtime_stop(&times);
 	if (ret) {
@@ -369,6 +442,7 @@ load_current_submanifests:
 	}
 
 load_server_submanifests:
+	printf("Loading NEW submanifests\n");
 	/* read the new collective of manifests that we are subscribed to in the new MoM */
 	server_manifest->submanifests = recurse_manifest(server_manifest, latest_subs, NULL);
 	if (!server_manifest->submanifests) {

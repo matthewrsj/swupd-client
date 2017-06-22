@@ -171,12 +171,18 @@ static struct manifest *manifest_from_file(int version, char *component, char *s
 	struct manifest *manifest;
 	struct list *includes = NULL;
 	char *filename;
+	char *basedir;
 	uint64_t filecount = 0;
 	uint64_t contentsize = 0;
 	int manifest_hdr_version;
 	int manifest_enc_version;
 
-	string_or_die(&filename, "%s/%i/Manifest.%s", state_dir, version, component);
+	if (!statepath) {
+		basedir = state_dir;
+	} else {
+		basedir = statepath;
+	}
+	string_or_die(&filename, "%s/%i/Manifest.%s", basedir, version, component);
 
 	infile = fopen(filename, "rbm");
 	if (infile == NULL) {
@@ -327,6 +333,9 @@ static struct manifest *manifest_from_file(int version, char *component, char *s
 
 		if (c[3] == 'r') {
 			file->is_rename = 1;
+		} else if (c[3] == 'm') {
+			file->is_mix = 1;
+			manifest->is_mix = 1;
 		} else if (c[3] != '.') { /* unknown modifier #3 */
 			free(file);
 			goto err;
@@ -365,6 +374,12 @@ static struct manifest *manifest_from_file(int version, char *component, char *s
 		file->filename = strdup(c);
 		if (!file->filename) {
 			abort();
+		}
+
+		/* Mark every file in a mix manifest as also being mix content since we do not
+		 * have another flag to check for like we do in the MoM */
+		if (is_mix) {
+			file->is_mix = 1;
 		}
 
 		if (file->is_manifest) {
@@ -499,14 +514,25 @@ out:
 }
 
 /* TODO: This should deal with nested manifests better */
-static int retrieve_manifests(int current, int version, char *component, struct file *file)
+static int retrieve_manifests(int current, int version, char *component, char *statepath, struct file *file)
 {
 	char *url = NULL;
 	char *filename;
 	char *dir;
+	char *basedir;
 	int ret = 0;
 	char *tar;
 	struct stat sb;
+	bool is_mix = false;
+
+	if (!statepath) {
+		basedir = state_dir;
+	} else {
+		basedir = statepath;
+	}
+
+	/* if they differ then we are on a mix */
+	is_mix = strcmp(basedir, state_dir);
 
 	/* Check for fullfile only, we will not be keeping the .tar around */
 	string_or_die(&filename, "%s/%i/Manifest.%s", state_dir, version, component);
@@ -515,7 +541,6 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 		goto out;
 	}
 	free(filename);
-	string_or_die(&filename, "%s/%i/Manifest.%s.tar", state_dir, version, component);
 
 	if (!check_network()) {
 		ret = -ENOSWUPDSERVER;
@@ -530,18 +555,28 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 	free(dir);
 
 	/* FILE is not set for a MoM, only for bundle manifests */
-	if (file && current < version) {
+	if (file && current < version && strcmp(component, "full") != 0) {
 		if (try_delta_manifest_download(current, version, component, file) == 0) {
 			return 0;
 		}
 	}
 
-	string_or_die(&url, "%s/%i/Manifest.%s.tar", content_url, version, component);
+	/* If it's mix content just hardlink instead of curl download */
+	if (is_mix) {
+		char *staged;
+		string_or_die(&filename, "%s/%i/Manifest.%s.tar", basedir, version, component);
+		string_or_die(&staged, "%s/%i/Manifest.%s.tar", state_dir, version, component);
+		link(filename, staged);
+		free(staged);
+	} else {
+		string_or_die(&filename, "%s/%i/Manifest.%s.tar", state_dir, version, component);
+		string_or_die(&url, "%s/%i/Manifest.%s.tar", content_url, version, component);
 
-	ret = swupd_curl_get_file(url, filename, NULL, NULL, false);
-	if (ret) {
-		unlink(filename);
-		goto out;
+		ret = swupd_curl_get_file(url, filename, NULL, NULL, false);
+		if (ret) {
+			unlink(filename);
+			goto out;
+		}
 	}
 
 	string_or_die(&tar, TAR_COMMAND " -C %s/%i -xf %s/%i/Manifest.%s.tar 2> /dev/null",
@@ -556,7 +591,9 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 	if (ret != 0) {
 		goto out;
 	} else {
-		unlink(filename);
+		if (!is_mix) {
+			unlink(filename);
+		}
 	}
 
 out:
@@ -745,6 +782,33 @@ retry_load:
 	}
 
 	set_untracked_manifest_files(manifest);
+
+	return manifest;
+}
+
+/* Special case manifest for mixer content enforcement */
+struct manifest *load_manifest_full(int version, bool mix)
+{
+	struct manifest *manifest = NULL;
+	int ret = 0;
+	char *basedir = NULL;
+
+	if (mix) {
+		basedir = MIX_STATE_DIR;
+	}
+retry_load:
+	ret = retrieve_manifests(version, version, "full", basedir, NULL);
+	if (ret != 0) {
+		fprintf(stderr, "Failed to retrieve %d Manifest.full\n", version);
+		return NULL;
+	}
+
+	manifest = manifest_from_file(version, "full", basedir, false, false, false);
+
+	if (manifest == NULL) {
+		fprintf(stderr, "Failed to load %d Manifest.full\n", version);
+		return NULL;
+	}
 
 	return manifest;
 }
@@ -1457,23 +1521,28 @@ static int cmpnames(const void *a, const void *b)
 	return strcmp((*(struct file **)a)->filename, (*(struct file **)b)->filename);
 }
 
-int enforce_compliant_manifest(struct file **a, struct file **b, int size)
+int enforce_compliant_manifest(struct file **a, struct file **b, int searchsize, int size)
 {
 	struct file **found;
+	int ret = 0;
 
-	//qsort(a, size, sizeof(char *), cmpnames);
-	print_manifest_array(a, size);
+	qsort(a, searchsize, sizeof(struct file *), cmpnames);
+	qsort(b, size, sizeof(struct file *), cmpnames);
 	printf("Checking manifest uniqueness...\n");
-	for (int i = 0; i < size; i++) {
+	for (int i = 0; i < searchsize; i++) {
 		found = bsearch(a[i], b, size, sizeof(struct file *), bsearch_file_helper);
 		if (found) {
+			if (strcmp(a[i]->filename, "/usr/lib/os-release") == 0 ||
+				strcmp(a[i]->filename, "/usr/share/clear/version") == 0 ||
+				strcmp(a[i]->filename, "/usr/share/clear/versionstamp") == 0) {
+					continue;			
+			}
 			if (hash_equal(a[i]->hash, (*found)->hash)) {
 				continue;
 			}
-			fprintf(stderr, "ERROR: Conflict found for file: %s & %s\n", a[i]->filename, (*found)->filename);
-			return 1;
+			fprintf(stderr, "ERROR: Conflict found for file: %s\n", a[i]->filename);
+			ret++;
 		}
 	}
-	return 0; // No collisions were found, so manifest is purely additive
+	return ret; // No collisions were found, so manifest is purely additive
 }
-

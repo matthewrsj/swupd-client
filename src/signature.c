@@ -437,7 +437,12 @@ bool download_and_verify_signature(const char *data_url, const char *data_filena
 	}
 
 	// Else, download a fresh signature, and verify
-	ret = swupd_curl_get_file(sig_url, sig_filename, NULL, NULL, false);
+	if (mix_exists) {
+		ret = link(local, sig_filename);
+	} else {
+		ret = swupd_curl_get_file(sig_url, sig_filename, NULL, NULL, false);
+	}
+
 	if (ret == 0) {
 		result = verify_signature(data_filename, sig_filename, true);
 	} else {
