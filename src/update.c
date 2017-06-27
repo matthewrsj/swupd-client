@@ -274,8 +274,8 @@ static bool system_on_mix(void)
 
 static bool need_new_upstream(int server)
 {
-	if (!access("/usr/share/mix/.clearversion", R_OK)) {
-		int version = read_mix_version_file("/usr/share/mix/.clearversion", path_prefix);
+	if (!access(MIX_DIR ".clearversion", R_OK)) {
+		int version = read_mix_version_file(MIX_DIR ".clearversion", path_prefix);
 		if (version < server) {
 			return true;
 		}
