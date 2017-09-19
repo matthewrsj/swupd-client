@@ -142,6 +142,75 @@ double swupd_query_url_content_size(char *url)
 	return content_size;
 }
 
+double swupd_check_file(char *url)
+{
+	CURLcode curl_ret;
+	double content_size;
+
+	if (!curl) {
+		return -1;
+	}
+
+	curl_easy_reset(curl);
+
+	/* Set buffer for error string */
+	curl_ret = curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+	if (curl_ret != CURLE_OK) {
+		return -1;
+	}
+
+	curl_ret = curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, filesize_from_header_cb);
+	if (curl_ret != CURLE_OK) {
+		return -1;
+	}
+
+	curl_ret = curl_easy_setopt(curl, CURLOPT_HEADER, 0L);
+	if (curl_ret != CURLE_OK) {
+		return -1;
+	}
+
+	curl_ret = curl_easy_setopt(curl, CURLOPT_URL, url);
+	if (curl_ret != CURLE_OK) {
+		return -1;
+	}
+
+	curl_ret = curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
+	if (curl_ret != CURLE_OK) {
+		return -1;
+	}
+
+	fprintf(stderr, "set it baby!\n");
+	struct version_container curl_out = { 0 };
+	curl_out.version = calloc(LINE_MAX, 1);
+	if (curl_out.version == NULL) {
+		fprintf(stderr, "it is null....lll...l.l.\n");
+		return -1;
+	}
+
+	curl_ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&curl_out);
+	if (curl_ret != CURLE_OK) {
+		fprintf(stderr, "INCORRECT CURLOPT_WRITEDATA\n");
+		return -1;
+	}
+	//fprintf(stderr, "CURL_OUT %s\n", curl_out.version);
+
+	fprintf(stderr, "curl_easy_perform\n");
+	curl_ret = curl_easy_perform(curl);
+	fprintf(stderr, "spewell damn\n");
+	if (curl_ret != CURLE_OK) {
+		fprintf(stderr, "well damn\n");
+		return -1;
+	}
+	fprintf(stderr, "well okay\n");
+
+	curl_ret = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &content_size);
+	if (curl_ret != CURLE_OK) {
+		return -1;
+	}
+
+	return content_size;
+}
+
 static size_t swupd_download_version_to_memory(void *ptr, size_t size, size_t nmemb, void *userdata)
 {
 	struct version_container *tmp_version = (struct version_container *)userdata;
@@ -207,6 +276,7 @@ int swupd_curl_get_file(const char *url, char *filename, struct file *file,
 	curl_easy_reset(curl);
 
 	if (in_memory_version_string == NULL) {
+		fprintf(stderr, "in_memory_version_string == NULL\n");
 		// normal file download
 		struct stat stat;
 
@@ -264,8 +334,10 @@ int swupd_curl_get_file(const char *url, char *filename, struct file *file,
 		goto exit;
 	}
 
+	fprintf(stderr, "about to curl_easy_perform\n");
 	curl_ret = curl_easy_perform(curl);
 	if (curl_ret == CURLE_OK || curl_ret == CURLE_HTTP_RETURNED_ERROR) {
+		fprintf(stderr, "curl_easy_perform failed\n");
 		curl_ret = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &ret);
 	}
 

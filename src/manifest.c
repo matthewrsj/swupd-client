@@ -517,6 +517,7 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 	string_or_die(&filename, "%s/%i/Manifest.%s.tar", state_dir, version, component);
 
 	if (!check_network()) {
+		fprintf(stderr, "no net\n");
 		ret = -ENOSWUPDSERVER;
 		goto out;
 	}
@@ -524,6 +525,7 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 	string_or_die(&dir, "%s/%i", state_dir, version);
 	ret = mkdir(dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 	if ((ret != 0) && (errno != EEXIST)) {
+		fprintf(stderr, "can't makedir\n");
 		goto out;
 	}
 	free(dir);
@@ -539,6 +541,7 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 
 	ret = swupd_curl_get_file(url, filename, NULL, NULL, false);
 	if (ret) {
+		fprintf(stderr, "swupd_curl_get_file failure\n");
 		unlink(filename);
 		goto out;
 	}
@@ -549,6 +552,7 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 	/* this is is historically a point of odd errors */
 	ret = system(tar);
 	if (WIFEXITED(ret)) {
+		fprintf(stderr, "failed to untar\n");
 		ret = WEXITSTATUS(ret);
 	}
 	free(tar);

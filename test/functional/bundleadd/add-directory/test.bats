@@ -15,15 +15,17 @@ setup() {
 }
 
 teardown() {
-  clean_tars 10
-  revert_chown_root "$DIR/web-dir/10/staged/$dir_hash"
-  sudo rmdir "$DIR/target-dir/usr/bin/"
+  #clean_tars 10
+  #revert_chown_root "$DIR/web-dir/10/staged/$dir_hash"
+  #sudo rmdir "$DIR/target-dir/usr/bin/"
+  echo hi
 }
 
 @test "bundle-add add bundle containing a directory" {
+  echo "run sudo sh -c $SWUPD bundle-add $SWUPD_OPTS test-bundle"
   run sudo sh -c "$SWUPD bundle-add $SWUPD_OPTS test-bundle"
-  [ "$status" -eq 0 ]
   check_lines "$output"
+  [ "$status" -eq 0 ]
   [ -d "$DIR/target-dir/usr/bin" ]
 }
 

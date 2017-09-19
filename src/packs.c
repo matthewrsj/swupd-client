@@ -95,10 +95,12 @@ static int download_pack(int oldversion, int newversion, char *module, int compl
 int download_subscribed_packs(struct list *subs, bool required)
 {
 	struct list *iter;
+	struct list *next;
 	struct sub *sub = NULL;
 	int err;
 	unsigned int list_length = 0;
 	unsigned int complete = 0;
+	char *url = NULL;
 
 	if (!check_network()) {
 		return -ENOSWUPDSERVER;
@@ -107,16 +109,26 @@ int download_subscribed_packs(struct list *subs, bool required)
 	iter = list_head(subs);
 	while (iter) {
 		sub = iter->data;
-		iter = iter->next;
+		next = iter->next;
 
-		if (sub->oldversion == sub->version) { // pack didn't change in this release
+		// pack didn't change in this release
+		if (sub->oldversion == sub->version) {
 			continue;
 		}
 
-		list_length++;
+		// pack doesn't exist
+		string_or_die(&url, "%s/%i/pack-%s-from-%i.tar", content_url, sub->version, sub->component, sub->oldversion);
+		fprintf(stderr, "at least we are here\n");
+		if (swupd_check_file(url) <= 0) {
+			fprintf(stderr, "SHIT...%s\n", url);
+			list_free_item(iter, NULL);
+		}
+		iter = next;
+		free(url);
 	}
 
 	iter = list_head(subs);
+	list_length = list_len(subs);
 	if (list_length > 0) {
 		fprintf(stderr, "Downloading %d packs...\n", list_length);
 	}

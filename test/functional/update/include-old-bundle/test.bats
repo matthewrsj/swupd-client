@@ -40,6 +40,8 @@ teardown() {
 }
 
 @test "update include a bundle from an older release" {
+  echo "$SWUPD update $SWUPD_OPTS"
+  [ 0 -eq 1 ]
   run sudo sh -c "$SWUPD update $SWUPD_OPTS"
 
   [ "$status" -eq 0 ]

@@ -262,6 +262,7 @@ extern void swupd_curl_cleanup(void);
 extern void swupd_curl_set_current_version(int v);
 extern void swupd_curl_set_requested_version(int v);
 extern double swupd_query_url_content_size(char *url);
+extern double swupd_check_file(char *url);
 extern CURLcode swupd_download_file_start(struct file *file);
 extern CURLcode swupd_download_file_complete(CURLcode curl_ret, struct file *file);
 extern int swupd_curl_get_file(const char *url, char *filename, struct file *file,
