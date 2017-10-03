@@ -537,8 +537,10 @@ static int retrieve_manifests(int current, int version, char *component, struct 
 
 	string_or_die(&url, "%s/%i/Manifest.%s.tar", content_url, version, component);
 
+	printf("swupd_curl_get_file\n");
 	ret = swupd_curl_get_file(url, filename, NULL, NULL, false);
 	if (ret) {
+		printf("yeah it failed\n");
 		unlink(filename);
 		goto out;
 	}

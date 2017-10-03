@@ -67,6 +67,7 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 {
 	struct list *iter;
 	struct file *file;
+	struct download *dl_obj = NULL;
 	unsigned int list_length = list_len(updates);
 	unsigned int complete = 0;
 
@@ -74,13 +75,15 @@ static struct list *full_download_loop(struct list *updates, int isfailed)
 	while (iter) {
 		file = iter->data;
 		iter = iter->next;
+		dl_obj->file = file;
+		dl_obj->pack = NULL;
 		complete++;
 
 		if (file->is_deleted) {
 			continue;
 		}
 
-		full_download(file);
+		full_download(dl_obj);
 		print_progress(complete, list_length);
 	}
 	print_progress(list_length, list_length); /* Force out 100% */

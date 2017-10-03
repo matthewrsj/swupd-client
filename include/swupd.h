@@ -120,6 +120,20 @@ struct file {
 	FILE *fh;      /* file written into during downloading */
 };
 
+struct pack {
+	char *module;
+	int oldversion;
+	int newversion;
+};
+
+struct download {
+	struct file *file;
+	struct pack *pack;
+	CURL *curl;
+	FILE *fh;
+	char *staging;
+};
+
 struct time {
 	struct timespec procstart;
 	struct timespec procstop;
@@ -246,7 +260,7 @@ extern void print_statistics(int version1, int version2);
 extern int download_subscribed_packs(struct list *subs, bool required);
 
 extern void try_delta(struct file *file);
-extern void full_download(struct file *file);
+extern void full_download(struct download *dl_obj);
 extern int start_full_download(bool pipelining);
 extern struct list *end_full_download(void);
 extern int untar_full_download(void *data);
@@ -262,8 +276,8 @@ extern void swupd_curl_cleanup(void);
 extern void swupd_curl_set_current_version(int v);
 extern void swupd_curl_set_requested_version(int v);
 extern double swupd_query_url_content_size(char *url);
-extern CURLcode swupd_download_file_start(struct file *file);
-extern CURLcode swupd_download_file_complete(CURLcode curl_ret, struct file *file);
+extern CURLcode swupd_download_file_start(struct download *dl_obj);
+extern CURLcode swupd_download_file_complete(CURLcode curl_ret, struct download *dl_obj);
 extern int swupd_curl_get_file(const char *url, char *filename, struct file *file,
 			       struct version_container *tmp_version, bool pack);
 #define SWUPD_CURL_LOW_SPEED_LIMIT 1

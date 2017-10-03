@@ -18,17 +18,20 @@ setup() {
 }
 
 teardown() {
-  clean_tars 10
-  revert_chown_root "$DIR/web-dir/10/staged/$t1_hash"
-  revert_chown_root "$DIR/web-dir/10/staged/$t2_hash"
-  sudo rmdir "$DIR/target-dir/usr/bin/"
-  sudo rm "$DIR/target-dir/usr/foo"
+  echo hi
+  #clean_tars 10
+  #revert_chown_root "$DIR/web-dir/10/staged/$t1_hash"
+  #revert_chown_root "$DIR/web-dir/10/staged/$t2_hash"
+  #sudo rmdir "$DIR/target-dir/usr/bin/"
+  #sudo rm "$DIR/target-dir/usr/foo"
 }
 
 @test "bundle-add verify include support" {
+  echo "$SWUPD bundle-add $SWUPD_OPTS test-bundle"
   run sudo sh -c "$SWUPD bundle-add $SWUPD_OPTS test-bundle"
 
   check_lines "$output"
+  echo $status
   [ "$status" -eq 0 ]
   ls "$DIR/target-dir/usr/bin"
   ls "$DIR/target-dir/usr/foo"

@@ -163,14 +163,14 @@ int start_full_download(bool pipelining)
 
 static void free_curl_list_data(void *data)
 {
-	struct file *file = (struct file *)data;
-	CURL *curl = file->curl;
-	(void)swupd_download_file_complete(CURLE_OK, file);
+	struct download *dl_obj = (struct download *)data;
+	CURL *curl = dl_obj->curl;
+	(void)swupd_download_file_complete(CURLE_OK, dl_obj);
 	if (curl != NULL) {
 		/* Must remove handle out of multi queue first!*/
 		curl_multi_remove_handle(mcurl, curl);
 		curl_easy_cleanup(curl);
-		file->curl = NULL;
+		dl_obj->curl = NULL;
 	}
 }
 
@@ -335,6 +335,41 @@ exit:
 	return err;
 }
 
+int untar_pack_download(struct pack *pack)
+{
+	FILE *tarfile = NULL;
+	char *filename = NULL;
+	char *tar = NULL;
+	int err = -1;
+
+	fprintf(stderr, "\nExtracting %s pack for version %i\n", pack->module, pack->newversion);
+
+	string_or_die(&filename, "%s/pack-%s-from-%i-to-%i.tar",
+			state_dir, pack->module, pack->oldversion, pack->newversion);
+	string_or_die(&tar, TAR_COMMAND " -C %s " TAR_PERM_ATTR_ARGS " -xf %s/pack-%s-from-%i-to-%i.tar 2> /dev/null",
+		      state_dir, state_dir, pack->module, pack->oldversion, pack->newversion);
+
+	err = system(tar);
+	if (WIFEXITED(err)) {
+		err = WEXITSTATUS(err);
+	}
+	free(tar);
+	unlink(filename);
+	/* make a zero sized file to prevent redownload */
+	tarfile = fopen(filename, "w");
+	free(filename);
+	if (tarfile) {
+		fclose(tarfile);
+	}
+
+	// Only negative return values should indicate errors
+	if (err > 0) {
+		return -err;
+	} else {
+		return err;
+	}
+}
+
 /* Try to process at most COUNT messages from the curl multi-stack, and enforce
  * the hysteresis when BOUNDED is true. The COUNT value is a best guess about
  * the number of messages ready to process, because it may include file
@@ -345,9 +380,10 @@ static int perform_curl_io_and_complete(int count, bool bounded)
 	long ret;
 	CURLcode curl_ret;
 
+	printf("count is %d\n", count);
 	while (count > 0) {
 		CURL *handle;
-		struct file *file;
+		struct download *dl_obj;
 
 		/* This function may return NULL before processing the
 		 * requested number of messages (stored in variable "count").
@@ -363,6 +399,7 @@ static int perform_curl_io_and_complete(int count, bool bounded)
 			 * process, or the multi-stack is now empty. */
 			break;
 		}
+		printf("msg is something\n");
 		if (msg->msg != CURLMSG_DONE) {
 			continue;
 		}
@@ -374,7 +411,7 @@ static int perform_curl_io_and_complete(int count, bool bounded)
 			continue;
 		}
 
-		curl_ret = curl_easy_getinfo(handle, CURLINFO_PRIVATE, (char **)&file);
+		curl_ret = curl_easy_getinfo(handle, CURLINFO_PRIVATE, (char **)&dl_obj);
 		if (curl_ret != CURLE_OK) {
 			curl_easy_cleanup(handle);
 			continue;
@@ -383,46 +420,75 @@ static int perform_curl_io_and_complete(int count, bool bounded)
 		/* Get error code from easy handle and augment it if
 		 * completing the download encounters further problems. */
 		curl_ret = msg->data.result;
-		curl_ret = swupd_download_file_complete(curl_ret, file);
+		printf("entering swupd_download_file_complete\n");
+		curl_ret = swupd_download_file_complete(curl_ret, dl_obj);
 
+		printf("entering ret checks, ret = %d\n", ret);
 		/* The easy handle may have an error set, even if the server returns
 		 * HTTP 200, so retry the download for this case. */
 		if (ret == 200 && curl_ret != CURLE_OK) {
-			fprintf(stderr, "Error for %s download: %s\n", file->hash,
-				curl_easy_strerror(msg->data.result));
-			failed = list_prepend_data(failed, file);
+			if (dl_obj->file) {
+				fprintf(stderr, "Error for %s download: %s\n", dl_obj->file->hash,
+					curl_easy_strerror(msg->data.result));
+			} else {
+				fprintf(stderr, "Error for pack download; %s\n", curl_easy_strerror(msg->data.result));
+			}
+			failed = list_prepend_data(failed, dl_obj);
 		} else if (ret == 200) {
 			/* When both web server and CURL report success, only then
 			 * proceed to uncompress. */
-			if (untar_full_download(file)) {
-				fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
-					file->hash, state_dir);
-				failed = list_prepend_data(failed, file);
+			if (dl_obj->file) {
+				if (untar_full_download(dl_obj->file)) {
+					fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
+						dl_obj->file->hash, state_dir);
+					failed = list_prepend_data(failed, dl_obj);
+				}
+			} else if (dl_obj->pack) {
+				if (untar_pack_download(dl_obj->pack)) {
+					fprintf(stderr, "Error for %s pack extraction, (check free space for %s?)\n",
+							dl_obj->pack->module, state_dir);
+					failed = list_prepend_data(failed, dl_obj);
+				}
 			}
 		} else if (ret == 0) {
 			/* When using the FILE:// protocol, 0 indicates success.
 			 * Otherwise, it means the web server hasn't responded yet.
 			 */
 			if (local_download) {
-				if (untar_full_download(file)) {
-					fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
-						file->hash, state_dir);
-					failed = list_prepend_data(failed, file);
+				if (dl_obj->file) {
+					if (untar_full_download(dl_obj->file)) {
+						fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
+							dl_obj->file->hash, state_dir);
+						failed = list_prepend_data(failed, dl_obj);
+					}
+				} else if (dl_obj->pack) {
+					if (untar_pack_download(dl_obj->pack)) {
+						fprintf(stderr, "Error for %s pack extraction, (check free space for %s?)\n",
+								dl_obj->pack->module, state_dir);
+						failed = list_prepend_data(failed, dl_obj);
+					}
 				}
 			} else {
-				fprintf(stderr, "Error for %s download: No response received\n",
-					file->hash);
-				failed = list_prepend_data(failed, file);
+				if (dl_obj->file) {
+					fprintf(stderr, "Error for %s download: No response received\n",
+						dl_obj->file->hash);
+				} else {
+					fprintf(stderr, "Error for %s pack download: No response received\n",
+							dl_obj->pack->module);
+				}
+				failed = list_prepend_data(failed, dl_obj);
 			}
 		} else {
-			fprintf(stderr, "Error for %s download: Received %ld response\n", file->hash, ret);
-			failed = list_prepend_data(failed, file);
+			if (dl_obj->file) {
+				fprintf(stderr, "Error for %s download: Received %ld response\n", dl_obj->file->hash, ret);
+				failed = list_prepend_data(failed, dl_obj->file);
 
-			unlink_all_staged_content(file);
+				unlink_all_staged_content(dl_obj->file);
+			}
 		}
-		if (file->staging) {
-			free(file->staging);
-			file->staging = NULL;
+		if (dl_obj->staging) {
+			free(dl_obj->staging);
+			dl_obj->staging = NULL;
 		}
 
 		/* NOTE: Intentionally no removal of file from hashmap.  All
@@ -436,7 +502,7 @@ static int perform_curl_io_and_complete(int count, bool bounded)
 
 		curl_multi_remove_handle(mcurl, handle);
 		curl_easy_cleanup(handle);
-		file->curl = NULL;
+		dl_obj->curl = NULL;
 
 		/* "bounded" is false when the remainder of the multi-stack is
 		 * to be processed, ignoring the hysteresis bound. */
@@ -544,7 +610,7 @@ extern int nonpack;
 
 /* full_download() attempts to enqueue a file for later asynchronous download
    - NOTE: See swupd_curl_get_file() for single file synchronous downloads. */
-void full_download(struct file *file)
+void full_download(struct download *dl_obj)
 {
 	char *url = NULL;
 	CURL *curl = NULL;
@@ -553,53 +619,67 @@ void full_download(struct file *file)
 	CURLMcode curlm_ret = CURLM_OK;
 	CURLcode curl_ret = CURLE_OK;
 
-	file->fh = NULL;
-	ret = swupd_curl_hashmap_insert(file);
-	if (ret > 0) { /* no download needed */
-		/* File already exists - report success */
-		ret = 0;
-		goto out_good;
-	} else if (ret < 0) { /* error */
-		goto out_bad;
-	} /* else (ret == 0)	   download needed */
+	dl_obj->fh = NULL;
+	if (dl_obj->file) {
+		ret = swupd_curl_hashmap_insert(dl_obj->file);
+		if (ret > 0) { /* no download needed */
+			/* File already exists - report success */
+			ret = 0;
+			goto out_good;
+		} else if (ret < 0) { /* error */
+			goto out_bad;
+		} /* else (ret == 0)	   download needed */
 
-	/* Only print the first file so we don't spam on large misses */
-	if (nonpack == 0) {
-		fprintf(stderr, "\nFile %s was not in a pack\n", file->filename);
+		/* Only print the first file so we don't spam on large misses */
+		if (nonpack == 0 && dl_obj->file) {
+			fprintf(stderr, "\nFile %s was not in a pack\n", dl_obj->file->filename);
+			nonpack++;
+		}
+
 	}
-	/* If we get here the pack is missing a file so we have to download it */
-	nonpack++;
 
+	/* If we get here the pack is missing a file so we have to download it */
 	curl = curl_easy_init();
 	if (curl == NULL) {
 		goto out_bad;
 	}
-	file->curl = curl;
+	dl_obj->curl = curl;
 
 	ret = poll_fewer_than(MAX_XFER, MAX_XFER_BOTTOM);
 	if (ret != 0) {
 		goto out_bad;
 	}
 
-	string_or_die(&url, "%s/%i/files/%s.tar", content_url, file->last_change, file->hash);
+	if (dl_obj->file) {
+		string_or_die(&url, "%s/%i/files/%s.tar",
+				content_url, dl_obj->file->last_change, dl_obj->file->hash);
+		string_or_die(&filename, "%s/download/.%s.tar", state_dir, dl_obj->file->hash);
+	} else if (dl_obj->pack) {
+		string_or_die(&url, "%s/%i/pack-%s-from-%i.tar",
+				content_url, dl_obj->pack->newversion, dl_obj->pack->module, dl_obj->pack->oldversion);
+		string_or_die(&filename, "%s/pack-%s-from-%i-to-%i.tar",
+				state_dir, dl_obj->pack->module, dl_obj->pack->oldversion, dl_obj->pack->newversion);
+	} else {
+		// What's the error here? Someone misused the API?
+		goto out_bad;
+	}
 
-	string_or_die(&filename, "%s/download/.%s.tar", state_dir, file->hash);
-	file->staging = filename;
+	dl_obj->staging = filename;
 
 	curl_ret = curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
 	if (curl_ret != CURLE_OK) {
 		goto out_bad;
 	}
 
-	curl_ret = curl_easy_setopt(curl, CURLOPT_PRIVATE, (void *)file);
+	curl_ret = curl_easy_setopt(curl, CURLOPT_PRIVATE, (void *)dl_obj);
 	if (curl_ret != CURLE_OK) {
 		goto out_bad;
 	}
-	curl_ret = swupd_download_file_start(file);
+	curl_ret = swupd_download_file_start(dl_obj);
 	if (curl_ret != CURLE_OK) {
 		goto out_bad;
 	}
-	curl_ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)file->fh);
+	curl_ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)dl_obj->fh);
 	if (curl_ret != CURLE_OK) {
 		goto out_bad;
 	}
@@ -627,8 +707,8 @@ void full_download(struct file *file)
 	goto out_good;
 
 out_bad:
-	failed = list_prepend_data(failed, file);
-	free_curl_list_data(file);
+	failed = list_prepend_data(failed, dl_obj);
+	free_curl_list_data(dl_obj);
 	free(filename);
 out_good:
 	free(url);
@@ -642,12 +722,16 @@ struct list *end_full_download(void)
 
 	if (poll_fewer_than(0, 0) == 0) {
 		// The multi-stack is now emptied.
+		printf("here!\n");
 		err = perform_curl_io_and_complete(1, false);
 		if (err) {
+			printf("errrrrr\n");
 			clean_curl_multi_queue();
 		}
 	}
+	printf("over here!\n");
 
-	curl_multi_cleanup(mcurl);
+	//curl_multi_cleanup(mcurl);
+	printf("after curl_multi_cleanup\n");
 	return failed;
 }

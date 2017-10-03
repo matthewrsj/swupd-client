@@ -158,29 +158,34 @@ static size_t swupd_download_version_to_memory(void *ptr, size_t size, size_t nm
 	return data_len;
 }
 
-CURLcode swupd_download_file_start(struct file *file)
+CURLcode swupd_download_file_start(struct download *dl_obj)
 {
-	file->fh = fopen(file->staging, "w");
-	if (!file->fh) {
+	printf("AND HERE WE ARE\n");
+	dl_obj->fh = fopen(dl_obj->staging, "w");
+	printf("fh assigned\n");
+	if (!dl_obj->fh) {
 		fprintf(stderr, "Cannot open file for write \\*outfile=\"%s\",strerror=\"%s\"*\\\n",
-			file->staging, strerror(errno));
+			dl_obj->staging, strerror(errno));
 		return CURLE_WRITE_ERROR;
 	}
 	return CURLE_OK;
 }
 
-CURLcode swupd_download_file_complete(CURLcode curl_ret, struct file *file)
+CURLcode swupd_download_file_complete(CURLcode curl_ret, struct download *dl_obj)
 {
-	if (file->fh) {
-		if (fclose(file->fh)) {
-			fprintf(stderr, "Cannot close file after write \\*outfile=\"%s\",strerror=\"%s\"*\\\n",
-				file->staging, strerror(errno));
+	if (dl_obj->fh) {
+		printf("trying to close\n");
+		/*
+		if (fclose(dl_obj->fh)) {
+			fprintf(stderr, "Cannot close file after write: strerror=\"%s\"*\\\n", strerror(errno));
 			if (curl_ret == CURLE_OK) {
 				curl_ret = CURLE_WRITE_ERROR;
 			}
-		}
-		file->fh = NULL;
+		}*/
+		printf("eek\n");
+		dl_obj->fh = NULL;
 	}
+	printf("leaving swupd_download_file_complete with %d\n", curl_ret);
 	return curl_ret;
 }
 
@@ -200,6 +205,12 @@ int swupd_curl_get_file(const char *url, char *filename, struct file *file,
 	long ret = 0;
 	int err = -1;
 	struct file *local = NULL;
+	struct download *dl_obj;
+
+	printf("hello from the swupd curl get file\n");
+	dl_obj = calloc(1, sizeof(struct download));
+
+	printf("hello from the swupd curl get file after calloc\n");
 
 	if (!curl) {
 		abort();
@@ -233,12 +244,23 @@ int swupd_curl_get_file(const char *url, char *filename, struct file *file,
 		if (curl_ret != CURLE_OK) {
 			goto exit;
 		}
-		curl_ret = swupd_download_file_start(local);
+		printf("entering swupd_download_file_start\n");
+		//struct download dl_obj = { .file = local, .pack = NULL, .staging = filename };
+		dl_obj->file = local;
+		dl_obj->pack = NULL;
+		dl_obj->staging = filename;
+		printf("really entering swupd_download_file_start\n");
+		printf("dl_obj staging is %s\n", dl_obj->staging);
+		curl_ret = swupd_download_file_start(dl_obj);
 		if (curl_ret != CURLE_OK) {
+			printf("going to exit\n");
 			goto exit;
 		}
-		curl_ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)local->fh);
+		printf("passed swupd_download_file_start\n");
+		printf("fh is %d\n", fileno(dl_obj->fh));
+		curl_ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)dl_obj->fh);
 		if (curl_ret != CURLE_OK) {
+			printf("curlopt writedata fail\n");
 			goto exit;
 		}
 	} else {
@@ -259,19 +281,25 @@ int swupd_curl_get_file(const char *url, char *filename, struct file *file,
 		}
 	}
 
+	printf("url is %s\n", url);
 	curl_ret = swupd_curl_set_basic_options(curl, url);
 	if (curl_ret != CURLE_OK) {
+		printf("couldn't set basic options\n");
 		goto exit;
 	}
 
+	printf("url is %s\n", url);
 	curl_ret = curl_easy_perform(curl);
+	printf("curl_ret is %d\n", curl_ret);
 	if (curl_ret == CURLE_OK || curl_ret == CURLE_HTTP_RETURNED_ERROR) {
+		printf("CURLE_OK or returned error\n");
 		curl_ret = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &ret);
 	}
 
 exit:
 	if (local) {
-		curl_ret = swupd_download_file_complete(curl_ret, local);
+		printf("local download file complete\n");
+		curl_ret = swupd_download_file_complete(curl_ret, dl_obj);
 	}
 	if (curl_ret == CURLE_OK) {
 		/* curl command succeeded, download might've failed, let our caller handle */
@@ -315,6 +343,7 @@ exit:
 			err = -ENONET;
 			break;
 		case CURLE_FILE_COULDNT_READ_FILE:
+			fprintf(stderr, "couldn't read file\n");
 			err = -1;
 			break;
 		case CURLE_PARTIAL_FILE:
@@ -355,6 +384,7 @@ exit:
 		free(local);
 	}
 
+	printf("err is %d\n", err);
 	return err;
 }
 

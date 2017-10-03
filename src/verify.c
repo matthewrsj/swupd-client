@@ -286,6 +286,7 @@ static struct list *download_loop(struct list *files, int isfailed)
 	iter = list_head(files);
 	while (iter) {
 		struct file *file;
+		struct download *dl_obj = NULL;
 		char *fullname;
 
 		file = iter->data;
@@ -316,7 +317,9 @@ static struct list *download_loop(struct list *files, int isfailed)
 		}
 
 		if (hash_needs_work(file, local.hash)) {
-			full_download(file);
+			dl_obj->file = file;
+			dl_obj->pack = NULL;
+			full_download(dl_obj);
 		} else {
 			/* mark the file as good to save time later */
 			file->do_not_update = 1;
