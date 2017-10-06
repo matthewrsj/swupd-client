@@ -735,16 +735,21 @@ download_subscribed_packs:
 
 		string_or_die(&hashpath, "%s/staged/%s", state_dir, file->hash);
 		string_or_die(&fullpath, "%s%s", path_prefix, file->filename);
+		printf("FULLPATH %s\n", fullpath);
+		printf("HASHPATH %s\n", hashpath);
 
 		if (access(hashpath, F_OK) < 0) {
 			/* fallback to verify_fix_path below, which will check the hash
 			 * itself */
+			printf("hashpath does not exist\n");
 			free(hashpath);
 			free(fullpath);
 			continue;
 		}
+		printf("after access\n");
 
 		ret = verify_file(file, hashpath);
+		printf("after verify_file\n");
 		if (!ret) {
 			fprintf(stderr, "Error: hash check failed for %s\n", fullpath);
 			free(hashpath);
@@ -755,6 +760,7 @@ download_subscribed_packs:
 		free(fullpath);
 	}
 
+	printf("entering next loop\n");
 	iter = list_head(to_install_files);
 	unsigned int list_length = list_len(to_install_files);
 	unsigned int complete = 0;
@@ -784,6 +790,7 @@ download_subscribed_packs:
 		print_progress(complete, list_length * 2);
 	}
 
+	printf("entering last loop\n");
 	iter = list_head(to_install_files);
 	while (iter) {
 		file = iter->data;

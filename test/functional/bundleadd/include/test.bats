@@ -18,6 +18,8 @@ setup() {
 }
 
 teardown() {
+  echo hi
+  echo "$SWUPD bundle-add $SWUPD_OPTS test-bundle"
   clean_tars 10
   revert_chown_root "$DIR/web-dir/10/staged/$t1_hash"
   revert_chown_root "$DIR/web-dir/10/staged/$t2_hash"
@@ -29,6 +31,7 @@ teardown() {
   run sudo sh -c "$SWUPD bundle-add $SWUPD_OPTS test-bundle"
 
   check_lines "$output"
+  echo $status
   [ "$status" -eq 0 ]
   ls "$DIR/target-dir/usr/bin"
   ls "$DIR/target-dir/usr/foo"

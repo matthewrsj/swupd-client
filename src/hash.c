@@ -83,14 +83,24 @@ static void hmac_sha256_for_data(char *hash,
 	unsigned int i;
 
 	if (data == NULL) {
+		printf("hash_set_zeros...\n");
 		hash_set_zeros(hash);
+		printf("...done\n");
 		return;
 	}
 
+	printf("entering EVP_sha256\n");
+	printf("key %s\n", key);
+	printf("key_len %zu\n", key_len);
+	printf("data %x\n", data);
+	printf("data_len %zu\n", data_len);
+
 	if (HMAC(EVP_sha256(), (const void *)key, key_len, data, data_len, digest, &digest_len) == NULL) {
+		printf("...done with error\n");
 		hash_set_zeros(hash);
 		return;
 	}
+	printf("...done\n");
 
 	digest_str = calloc((digest_len * 2) + 1, sizeof(char));
 	if (digest_str == NULL) {
@@ -125,13 +135,16 @@ static void hmac_compute_key(const char *filename,
 	size_t xattrs_blob_len = 0;
 
 	if (use_xattrs) {
+		printf("use_xattrs\n");
 		xattrs_get_blob(filename, &xattrs_blob, &xattrs_blob_len);
+		printf("xattrs_get_blob done\n");
 	}
 
 	hmac_sha256_for_data(key, (const unsigned char *)updt_stat,
 			     sizeof(struct update_stat),
 			     (const unsigned char *)xattrs_blob,
 			     xattrs_blob_len);
+	printf("hmac_sha256_for_data done\n");
 
 	if (hash_is_zeros(key)) {
 		*key_len = 0;
@@ -172,14 +185,18 @@ int compute_hash(struct file *file, char *filename)
 	unsigned char *blob;
 	FILE *fl;
 
+	printf("in compute_hash\n");
 	if (file->is_deleted) {
 		hash_set_zeros(file->hash);
 		return 0;
 	}
 
+	printf("entering hash_set_zeros\n");
 	hash_set_zeros(key);
+	printf("...done\n");
 
 	if (file->is_link) {
+		printf("file is link...\n");
 		char link[PATH_MAXLEN];
 		memset(link, 0, PATH_MAXLEN);
 
@@ -198,7 +215,10 @@ int compute_hash(struct file *file, char *filename)
 	}
 
 	if (file->is_dir) {
+		printf("file is dir\n");
+		printf("filename is %s\n", filename);
 		hmac_compute_key(filename, &file->stat, key, &key_len, file->use_xattrs);
+		printf("done with hmac_compute_key\n");
 		hmac_sha256_for_string(file->hash,
 				       (const unsigned char *)key,
 				       key_len,
@@ -229,9 +249,12 @@ int compute_hash(struct file *file, char *filename)
 
 bool verify_file(struct file *file, char *filename)
 {
+	printf("calloc...\n");
 	struct file *local = calloc(1, sizeof(struct file));
+	printf("...done\n");
 
 	if (local == NULL) {
+		printf("aborting\n");
 		abort();
 	}
 
@@ -245,12 +268,16 @@ bool verify_file(struct file *file, char *filename)
 	 */
 	local->use_xattrs = !file->is_manifest;
 
+	printf("entering populate_file_struct\n");
 	populate_file_struct(local, filename);
+	printf("entering compute_hash\n");
 	if (compute_hash(local, filename) != 0) {
+		printf("returning false\n");
 		free(local);
 		return false;
 	}
 
+	printf("checking if manifest hash matches local file hash\n");
 	/* Check if manifest hash matches local file hash */
 	if (hash_equal(file->hash, local->hash)) {
 		free(local);

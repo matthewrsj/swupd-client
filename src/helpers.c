@@ -789,7 +789,7 @@ int verify_fix_path(char *targetpath, struct manifest *target_MoM)
 		/* Search for the file in the manifest, to get the hash for the file */
 		file = search_file_in_manifest(target_MoM, path);
 		if (file == NULL) {
-			fprintf(stderr, "Error: Path %s not found in any of the subscribed manifests"
+			fprintf(stderr, "Error: Path %s not found in any of the subscribed manifests "
 					"in verify_fix_path for path_prefix %s\n",
 				path, path_prefix);
 			ret = -1;

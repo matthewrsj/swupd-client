@@ -104,6 +104,12 @@ int download_subscribed_packs(struct list *subs, bool required)
 		return -ENOSWUPDSERVER;
 	}
 
+	err = start_full_download(true);
+	if (err) {
+		fprintf(stderr, "Could not start pack download.\n");
+		return err;
+	}
+
 	fprintf(stderr, "Downloading packs...\n");
 	iter = list_head(subs);
 	while (iter) {
@@ -115,7 +121,14 @@ int download_subscribed_packs(struct list *subs, bool required)
 			continue;
 		}
 
-		err = download_pack(sub->oldversion, sub->version, sub->component);
+		struct file *pack;
+		pack = calloc(1, sizeof(struct file));
+		pack->oldversion = sub->oldversion;
+		pack->newversion = sub->version;
+		pack->is_pack = 1;
+		string_or_die(&pack->module, "%s", sub->component);
+		//err = download_pack(sub->oldversion, sub->version, sub->component);
+		full_download(pack);
 		print_progress(complete, list_length);
 		if (err < 0) {
 			if (required) { /* Probably need printf("\n") here */
@@ -128,5 +141,10 @@ int download_subscribed_packs(struct list *subs, bool required)
 
 	print_progress(list_length, list_length); /* Force out 100% */
 	printf("\n");
+
+	if (end_full_download()) {
+		//return 1;
+	}
+
 	return 0;
 }

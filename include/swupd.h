@@ -103,6 +103,7 @@ struct file {
 	unsigned int is_deleted : 1;
 	unsigned int is_tracked : 1;
 	unsigned int is_manifest : 1;
+	unsigned int is_pack : 1;
 
 	unsigned int is_config : 1;
 	unsigned int is_state : 1;
@@ -118,6 +119,10 @@ struct file {
 	char *staging; /* output name used during download & staging */
 	CURL *curl;    /* curl handle if downloading */
 	FILE *fh;      /* file written into during downloading */
+
+	char *module;
+	int oldversion;
+	int newversion;
 };
 
 struct time {

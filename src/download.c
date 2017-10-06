@@ -335,6 +335,38 @@ exit:
 	return err;
 }
 
+int untar_pack_download(struct file *pack)
+{
+	FILE *tarfile = NULL;
+	char *filename = NULL;
+	char *tar = NULL;
+	int err = -1;
+
+	fprintf(stderr, "\nExtracting %s pack for version %i\n", pack->module, pack->newversion);
+
+	string_or_die(&filename, "%s/pack-%s-from-%i-to-%i.tar",
+			state_dir, pack->module, pack->oldversion, pack->newversion);
+	string_or_die(&tar, TAR_COMMAND " -C %s " TAR_PERM_ATTR_ARGS " -xf %s/pack-%s-from-%i-to-%i.tar",
+			state_dir, state_dir, pack->module, pack->oldversion, pack->newversion);
+
+	err = system(tar);
+	if (WIFEXITED(err)) {
+		err = WEXITSTATUS(err);
+	}
+	free(tar);
+	unlink(filename);
+	free(filename);
+	// make a zero sized file to prevent redownload, regardless of error above
+	tarfile = fopen(filename, "w");
+	free(filename);
+	if (tarfile) {
+		fclose(tarfile);
+	}
+
+	// Only negative return values should indicate errors
+	return (err <= 0 ? err : -err);
+}
+
 /* Try to process at most COUNT messages from the curl multi-stack, and enforce
  * the hysteresis when BOUNDED is true. The COUNT value is a best guess about
  * the number of messages ready to process, because it may include file
@@ -403,20 +435,36 @@ static int perform_curl_io_and_complete(int count, bool bounded)
 		} else if (ret == 200) {
 			/* When both web server and CURL report success, only then
 			 * proceed to uncompress. */
-			if (untar_full_download(file)) {
-				fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
-					file->hash, state_dir);
-				failed = list_prepend_data(failed, file);
+			if (file->is_pack) {
+				if (untar_pack_download(file)) {
+					fprintf(stderr, "Error for %s pack extraction, (check free space for %s?)\n",
+							file->module, state_dir);
+					failed = list_prepend_data(failed, file);
+				}
+			} else {
+				if (untar_full_download(file)) {
+					fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
+						file->hash, state_dir);
+					failed = list_prepend_data(failed, file);
+				}
 			}
 		} else if (ret == 0) {
 			/* When using the FILE:// protocol, 0 indicates success.
 			 * Otherwise, it means the web server hasn't responded yet.
 			 */
 			if (local_download) {
-				if (untar_full_download(file)) {
-					fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
-						file->hash, state_dir);
-					failed = list_prepend_data(failed, file);
+				if (file->is_pack) {
+					if (untar_pack_download(file)) {
+						fprintf(stderr, "Error for %s pack extraction, (check free space for %s?)\n",
+							file->module, state_dir);
+						failed = list_prepend_data(failed, file);
+					}
+				} else {
+					if (untar_full_download(file)) {
+						fprintf(stderr, "Error for %s tarfile extraction, (check free space for %s?)\n",
+							file->hash, state_dir);
+						failed = list_prepend_data(failed, file);
+					}
 				}
 			} else {
 				fprintf(stderr, "Error for %s download: No response received\n",
@@ -563,21 +611,23 @@ void full_download(struct file *file)
 	CURLcode curl_ret = CURLE_OK;
 
 	file->fh = NULL;
-	ret = swupd_curl_hashmap_insert(file);
-	if (ret > 0) { /* no download needed */
-		/* File already exists - report success */
-		ret = 0;
-		goto out_good;
-	} else if (ret < 0) { /* error */
-		goto out_bad;
-	} /* else (ret == 0)	   download needed */
+	if (!file->is_pack) {
+		ret = swupd_curl_hashmap_insert(file);
+		if (ret > 0) { /* no download needed */
+			/* File already exists - report success */
+			ret = 0;
+			goto out_good;
+		} else if (ret < 0) { /* error */
+			goto out_bad;
+		} /* else (ret == 0)	   download needed */
 
-	/* Only print the first file so we don't spam on large misses */
-	if (nonpack == 0) {
-		fprintf(stderr, "\nFile %s was not in a pack\n", file->filename);
+		/* Only print the first file so we don't spam on large misses */
+		if (nonpack == 0) {
+			fprintf(stderr, "\nFile %s was not in a pack\n", file->hash);
+			/* If we get here the pack is missing a file so we have to download it */
+			nonpack++;
+		}
 	}
-	/* If we get here the pack is missing a file so we have to download it */
-	nonpack++;
 
 	curl = curl_easy_init();
 	if (curl == NULL) {
@@ -590,9 +640,18 @@ void full_download(struct file *file)
 		goto out_bad;
 	}
 
-	string_or_die(&url, "%s/%i/files/%s.tar", content_url, file->last_change, file->hash);
+	if (file->is_pack) {
+		string_or_die(&url, "%s/%i/pack-%s-from-%i.tar",
+				content_url, file->newversion, file->module, file->oldversion);
+		string_or_die(&filename, "%s/pack-%s-from-%i-to-%i.tar",
+				state_dir, file->module, file->oldversion, file->newversion);
+	} else {
+		string_or_die(&url, "%s/%i/files/%s.tar",
+				content_url, file->last_change, file->hash);
+		string_or_die(&filename, "%s/download/.%s.tar",
+				state_dir, file->hash);
+	}
 
-	string_or_die(&filename, "%s/download/.%s.tar", state_dir, file->hash);
 	file->staging = filename;
 
 	curl_ret = curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
